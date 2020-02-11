@@ -11,7 +11,9 @@ import Basics.Extra exposing (flip)
 
 
 type alias Model =
-    List Diagram
+    { diagram : List Diagram
+    , operation : Maybe Operation
+    }
 
 
 type Diagram
@@ -19,6 +21,19 @@ type Diagram
     | L Int
     | Tri Int
     | Frame Int Int
+
+
+type Operation
+    = SplitInnerSquare
+    | Split4
+    | SplitEnds
+    | SplitOuterFrame
+    | SplitFrame
+    | SplitSquare
+    | SplitSide
+    | SplitTST
+    | SplitDia
+    | LCut
 
 
 splitInnerSquare : Diagram -> List Diagram
@@ -176,7 +191,8 @@ distance =
 
 
 type Msg
-    = LCut Int
+    = SetOp String
+    | DoOp Int
 
 
 main =
@@ -190,7 +206,7 @@ main =
 
 init : () -> ( Model, Cmd Msg )
 init _ =
-    ( split4 (Rect 6 6), Cmd.none )
+    ( { diagram = [Rect 5 5], operation = Nothing }, Cmd.none )
 
 
 draw x y =
@@ -217,41 +233,133 @@ viewDiagram i d =
     case d of
         {- Square n ->
             List.concatMap (column 0 n) (List.range 0 (n-1))
-                |> svg [Html.Attributes.style "padding" "30px", Html.Events.onClick (LCut i), width <| String.fromInt (n*distance-2*radius), height <| String.fromInt (n*distance-2*radius)] -}
+                |> svg [Html.Attributes.style "padding" "30px", Html.Events.onClick (Op LCut i), width <| String.fromInt (n*distance-2*radius), height <| String.fromInt (n*distance-2*radius)] -}
 
         L n ->
-            svg [ Html.Attributes.style "padding" "30px", width <| String.fromInt (n*distance-2*radius), height <| String.fromInt (n*distance-2*radius)] ((row 1 n (n-1))++(column 0 n 0))
+            svg [ Html.Events.onClick (DoOp i), Html.Attributes.style "padding" "30px", width <| String.fromInt (n*distance-2*radius), height <| String.fromInt (n*distance-2*radius)] ((row 1 n (n-1))++(column 0 n 0))
 
         Rect w h ->
             List.concatMap (column 0 h) (List.range 0 (w-1))
-                |> svg [Html.Attributes.style "padding" "30px", width <| String.fromInt (w*distance-2*radius), height <| String.fromInt (h*distance-2*radius)]
+                |> svg [ Html.Events.onClick (DoOp i), Html.Attributes.style "padding" "30px", width <| String.fromInt (w*distance-2*radius), height <| String.fromInt (h*distance-2*radius)]
 
         Tri n ->
             List.concatMap (\x -> row 0 (x+1) x) (List.range 0 (n-1))
-                |> svg [Html.Attributes.style "padding" "30px", width <| String.fromInt (n*distance-2*radius), height <| String.fromInt (n*distance-2*radius)]
+                |> svg [ Html.Events.onClick (DoOp i), Html.Attributes.style "padding" "30px", width <| String.fromInt (n*distance-2*radius), height <| String.fromInt (n*distance-2*radius)]
 
         Frame n w ->
             (List.concatMap (column 0 n) (List.range 0 (w-1)) ++ List.concatMap (row w (n-w)) (List.range 0 (w-1)) ++ List.concatMap (row w (n-w)) (List.range (n-w) (n-1)) ++ List.concatMap (column 0 n) (List.range (n-w) (n-1)))
-                |> svg [Html.Attributes.style "padding" "30px", Html.Events.onClick (LCut i), width <| String.fromInt (n*distance-2*radius), height <| String.fromInt (n*distance-2*radius)]
+                |> svg [ Html.Events.onClick (DoOp i), Html.Attributes.style "padding" "30px", width <| String.fromInt (n*distance-2*radius), height <| String.fromInt (n*distance-2*radius)]
 
         {- Dia n ->
             List.map (\x -> draw x (n-1-x)) (List.range 0 (n-1))
-                |> svg [Html.Attributes.style "padding" "30px", width <| String.fromInt (n*distance-2*radius), height <| String.fromInt (n*distance-2*radius)] -}
+                |> svg [ Html.Events.onClick (DoOp i), Html.Attributes.style "padding" "30px", width <| String.fromInt (n*distance-2*radius), height <| String.fromInt (n*distance-2*radius)] -}
+
+
+toOp : String -> Maybe Operation
+toOp s =
+    case s of
+        "splitInnerSquare" ->
+            Just SplitInnerSquare
+
+        "split4" ->
+            Just Split4
+
+        "splitEnds" ->
+            Just SplitEnds
+
+        "splitOuterFrame" ->
+            Just SplitOuterFrame
+
+        "splitFrame" ->
+            Just SplitFrame
+
+        "splitSquare" ->
+            Just SplitSquare
+
+        "splitSide" ->
+            Just SplitSide
+
+        "splitTST" ->
+            Just SplitTST
+
+        "splitDia" ->
+            Just SplitDia
+
+        "lcut" ->
+           Just LCut
+
+        _ ->
+            Nothing
 
 
 view : Model -> Browser.Document Msg
 view model =
     { title = "Netherite"
     , body =
-        List.indexedMap viewDiagram model
+        select
+            [ onInput SetOp ]
+            [ option [ Html.Attributes.value "none" ] [ Html.text "None" ]
+            , option [ Html.Attributes.value "splitInnerSquare" ] [ Html.text "Split Inner Square" ]
+            , option [ Html.Attributes.value "split4" ] [ Html.text "Split Four" ]
+            , option [ Html.Attributes.value "splitEnds" ] [ Html.text "Split Ends" ]
+            , option [ Html.Attributes.value "splitOuterFrame" ] [ Html.text "Split Outer Frame" ]
+            , option [ Html.Attributes.value "splitFrame" ] [ Html.text "Split Frame" ]
+            , option [ Html.Attributes.value "splitSquare" ] [ Html.text "Split Square" ]
+            , option [ Html.Attributes.value "splitSide" ] [ Html.text "Split Side" ]
+            , option [ Html.Attributes.value "splitTST" ] [ Html.text "Split TST" ]
+            , option [ Html.Attributes.value "splitDia" ] [ Html.text "Split Diagonal" ]
+            , option [ Html.Attributes.value "lcut" ] [ Html.text "L-Cut" ]
+            ]
+            ::List.indexedMap viewDiagram model.diagram
     }
+
+
+toOpFunc o =
+    case o of
+        Nothing ->
+            \x -> [x]
+
+        Just SplitInnerSquare ->
+            splitInnerSquare
+
+        Just Split4 ->
+            split4
+
+        Just SplitEnds ->
+            splitEnds
+
+        Just SplitOuterFrame ->
+            splitOuterFrame
+
+        Just SplitFrame ->
+            splitFrame
+
+        Just SplitSquare ->
+            splitSquare
+
+        Just SplitSide ->
+            splitSide
+
+        Just SplitTST ->
+            splitTST
+
+        Just SplitDia ->
+            splitDia
+
+        Just LCut ->
+            lcut
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        LCut i ->
-            ( List.concat <| List.indexedMap (\j dia -> if j == i then lcut dia else [dia]) model, Cmd.none )
+        SetOp s ->
+            ({ model | operation = toOp s }, Cmd.none)
+        {- Op LCut i ->
+            ( List.concat <| List.indexedMap (\j dia -> if j == i then lcut dia else [dia]) model, Cmd.none ) -}
+
+        DoOp i ->
+            ( { model | diagram = List.concat <| List.indexedMap (\j dia -> if j == i then (toOpFunc model.operation) dia else [dia]) model.diagram }, Cmd.none )
 
 
 subscriptions : Model -> Sub Msg
