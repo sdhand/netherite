@@ -92,7 +92,7 @@ splitFrame : Diagram -> List Diagram
 splitFrame d =
     case d of
         Frame n w ->
-            [ Rect (n-1) w, Rect (n-1) w, Rect w (n-1), Rect w (n-1) ]
+            [ Rect (n-w) w, Rect (n-w) w, Rect w (n-w), Rect w (n-w) ]
 
         _ ->
             [d]
