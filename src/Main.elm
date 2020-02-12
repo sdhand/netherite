@@ -10,10 +10,28 @@ import Svg.Attributes exposing (..)
 import Basics.Extra exposing (flip)
 
 
+type Stage
+    = Proving
+        { diagram : List Diagram
+        , operation : Maybe Operation
+        }
+    | Initialising
+        { n : String
+        , selected : String
+        , p1 : String
+        , p2 : String
+        }
+    | Done
+
+
 type alias Model =
-    { diagram : List Diagram
-    , operation : Maybe Operation
+    { stage : Stage
+    , proofs : List Proof
     }
+
+
+type alias Proof =
+    List Operation
 
 
 type Diagram
@@ -193,6 +211,11 @@ distance =
 type Msg
     = SetOp String
     | DoOp Int
+    | Next
+    | SetShape String
+    | SetN String
+    | SetP1 String
+    | SetP2 String
 
 
 main =
@@ -206,7 +229,7 @@ main =
 
 init : () -> ( Model, Cmd Msg )
 init _ =
-    ( { diagram = [Rect 5 5], operation = Nothing }, Cmd.none )
+    ( { stage = Initialising { n = "", selected = "rect", p1 = "", p2 = "" }, proofs = [[]] }, Cmd.none )
 
 
 draw x y =
@@ -296,21 +319,42 @@ view : Model -> Browser.Document Msg
 view model =
     { title = "Netherite"
     , body =
-        select
-            [ onInput SetOp ]
-            [ option [ Html.Attributes.value "none" ] [ Html.text "None" ]
-            , option [ Html.Attributes.value "splitInnerSquare" ] [ Html.text "Split Inner Square" ]
-            , option [ Html.Attributes.value "split4" ] [ Html.text "Split Four" ]
-            , option [ Html.Attributes.value "splitEnds" ] [ Html.text "Split Ends" ]
-            , option [ Html.Attributes.value "splitOuterFrame" ] [ Html.text "Split Outer Frame" ]
-            , option [ Html.Attributes.value "splitFrame" ] [ Html.text "Split Frame" ]
-            , option [ Html.Attributes.value "splitSquare" ] [ Html.text "Split Square" ]
-            , option [ Html.Attributes.value "splitSide" ] [ Html.text "Split Side" ]
-            , option [ Html.Attributes.value "splitTST" ] [ Html.text "Split TST" ]
-            , option [ Html.Attributes.value "splitDia" ] [ Html.text "Split Diagonal" ]
-            , option [ Html.Attributes.value "lcut" ] [ Html.text "L-Cut" ]
-            ]
-            ::List.indexedMap viewDiagram model.diagram
+        case model.stage of
+            Proving p ->
+                select
+                    [ onInput SetOp ]
+                    [ option [ Html.Attributes.value "none" ] [ Html.text "None" ]
+                    , option [ Html.Attributes.value "splitInnerSquare" ] [ Html.text "Split Inner Square" ]
+                    , option [ Html.Attributes.value "split4" ] [ Html.text "Split Four" ]
+                    , option [ Html.Attributes.value "splitEnds" ] [ Html.text "Split Ends" ]
+                    , option [ Html.Attributes.value "splitOuterFrame" ] [ Html.text "Split Outer Frame" ]
+                    , option [ Html.Attributes.value "splitFrame" ] [ Html.text "Split Frame" ]
+                    , option [ Html.Attributes.value "splitSquare" ] [ Html.text "Split Square" ]
+                    , option [ Html.Attributes.value "splitSide" ] [ Html.text "Split Side" ]
+                    , option [ Html.Attributes.value "splitTST" ] [ Html.text "Split TST" ]
+                    , option [ Html.Attributes.value "splitDia" ] [ Html.text "Split Diagonal" ]
+                    , option [ Html.Attributes.value "lcut" ] [ Html.text "L-Cut" ]
+                    ]
+                ::button [ onClick Next ] [Html.text "Next Proof" ]
+                ::List.indexedMap viewDiagram p.diagram
+
+            Initialising i->
+                input
+                    [ type_ "number", Html.Attributes.value i.n, onInput SetN ]
+                    []
+                ::select
+                    [ onInput SetShape ]
+                    [ option [ Html.Attributes.value "rect" ] [ Html.text "Rectangle" ]
+                    , option [ Html.Attributes.value "tri" ] [ Html.text "Triangle" ]
+                    , option [ Html.Attributes.value "l" ] [ Html.text "L" ]
+                    , option [ Html.Attributes.value "frame" ] [ Html.text "Frame" ]
+                    ]
+                :: input [ type_ "number", Html.Attributes.value i.p1, onInput SetP1 ] []
+                :: (if i.selected == "rect" || i.selected == "frame" then [ input [ type_ "number", Html.Attributes.value i.p2, onInput SetP2 ] [] ] else [])
+                ++ [ button [ onClick Next ] [ Html.text "Prove..." ] ]
+
+            Done ->
+                []
     }
 
 
@@ -352,14 +396,61 @@ toOpFunc o =
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
-    case msg of
-        SetOp s ->
-            ({ model | operation = toOp s }, Cmd.none)
-        {- Op LCut i ->
-            ( List.concat <| List.indexedMap (\j dia -> if j == i then lcut dia else [dia]) model, Cmd.none ) -}
+    case model.stage of
+        Proving p ->
+            case msg of
+                SetOp s ->
+                    ({ model | stage = Proving { p | operation = toOp s }}, Cmd.none)
+                {- Op LCut i ->
+                    ( List.concat <| List.indexedMap (\j dia -> if j == i then lcut dia else [dia]) model, Cmd.none ) -}
 
-        DoOp i ->
-            ( { model | diagram = List.concat <| List.indexedMap (\j dia -> if j == i then (toOpFunc model.operation) dia else [dia]) model.diagram }, Cmd.none )
+                DoOp i ->
+                    ( { model | stage = Proving { p | diagram = List.concat <| List.indexedMap (\j dia -> if j == i then (toOpFunc p.operation) dia else [dia]) p.diagram } }, Cmd.none )
+
+                Next ->
+                    if List.length model.proofs >= 2 then
+                        ( {model | stage = Done }, Cmd.none )
+                    else
+                        ( { stage = Initialising { n = "", selected = "rect", p1 = "", p2 = "" }, proofs = []::model.proofs }, Cmd.none )
+
+                _ ->
+                    ( model, Cmd.none )
+
+        Initialising i ->
+            case msg of
+                SetN n ->
+                    ({ model | stage = Initialising { i | n = n } }, Cmd.none)
+
+                SetShape selected ->
+                    ({ model | stage = Initialising { i | selected = selected } }, Cmd.none)
+
+                SetP1 p1 ->
+                    ({ model | stage = Initialising { i | p1 = p1 } }, Cmd.none)
+
+                SetP2 p2 ->
+                    ({ model | stage = Initialising { i | p2 = p2 } }, Cmd.none)
+
+                Next ->
+                    case (String.toInt i.n, (i.selected, String.toInt i.p1, String.toInt i.p2)) of
+                        ( Just n, ("rect", Just p1, Just p2)) ->
+                            ( { model | stage = Proving { diagram = [ Rect p1 p2 ], operation = Nothing } }, Cmd.none )
+
+                        ( Just n, ("tri", Just p1, _ )) ->
+                            ( { model | stage = Proving { diagram = [ Tri p1 ], operation = Nothing }}, Cmd.none )
+
+                        ( Just n, ("l", Just p1, _ )) ->
+                            ( { model | stage = Proving { diagram = [ L p1 ], operation = Nothing }}, Cmd.none )
+
+                        ( Just n, ("frame", Just p1, Just p2)) ->
+                            ( { model | stage = Proving { diagram = [ Frame p1 p2 ], operation = Nothing }}, Cmd.none )
+
+                        _ ->
+                            (model, Cmd.none)
+                _ ->
+                    (model, Cmd.none)
+
+        Done ->
+            (model, Cmd.none)
 
 
 subscriptions : Model -> Sub Msg
