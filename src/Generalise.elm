@@ -16,6 +16,7 @@ type SquareOp
     | Split4 SquareOp SquareOp SquareOp SquareOp
     | SplitDiaS TriOp TriOp
     | Square Int
+    | UnitS
 
 
 type RectOp
@@ -24,11 +25,13 @@ type RectOp
     | ToSquare SquareOp
     | Rotate RectOp
     | Rect Int Int
+    | UnitR
 
 
 type FrameOp
     = SplitFrame RectOp RectOp RectOp RectOp
     | Frame Int Int
+    | UnitF
 
 
 type TriOp
@@ -36,11 +39,13 @@ type TriOp
     | LCutT LOp TriOp
     | SplitSide RectOp TriOp
     | Tri Int
+    | UnitT
 
 
 type LOp
     = SplitEnds RectOp LOp
     | L Int
+    | UnitL
 
 
 type ProofTree
@@ -135,6 +140,9 @@ column start end x =
 drawSOp : String -> (SquareOp -> ProofTree) -> SquareOp -> List (Html Msg)
 drawSOp op rest tree =
     case tree of
+        UnitS ->
+            []
+
         LCutS l s ->
             drawLOp op (rest << \x -> LCutS x s) l ++ drawSOp op (rest << LCutS l) s
 
@@ -199,6 +207,9 @@ drawSOp op rest tree =
 drawROp : String -> (RectOp -> ProofTree) -> RectOp -> List (Html Msg)
 drawROp op rest tree =
     case tree of
+        UnitR ->
+            []
+
         SplitSquare s r ->
             drawSOp op (rest << \x -> SplitSquare x r) s ++ drawROp op (rest << SplitSquare s) r
 
@@ -252,6 +263,9 @@ drawROp op rest tree =
 drawTOp : String -> (TriOp -> ProofTree) -> TriOp -> List (Html Msg)
 drawTOp op rest tree =
     case tree of
+        UnitT ->
+            []
+
         SplitTST t1 s t2 ->
             drawTOp op (rest << \x -> SplitTST x s t2) t1
                 ++ drawSOp op (rest << \x -> SplitTST t1 x t2) s
@@ -298,6 +312,9 @@ drawTOp op rest tree =
 drawFOp : String -> (FrameOp -> ProofTree) -> FrameOp -> List (Html Msg)
 drawFOp op rest tree =
     case tree of
+        UnitF ->
+            []
+
         SplitFrame r1 r2 r3 r4 ->
             drawROp op (rest << \x -> SplitFrame x r2 r3 r4) r1
                 ++ drawROp op (rest << \x -> SplitFrame r1 x r3 r4) r2
@@ -327,6 +344,9 @@ drawFOp op rest tree =
 drawLOp : String -> (LOp -> ProofTree) -> LOp -> List (Html Msg)
 drawLOp op rest tree =
     case tree of
+        UnitL ->
+            []
+
         SplitEnds r l ->
             drawROp op (rest << \x -> SplitEnds x l) r ++ drawLOp op (rest << SplitEnds r) l
 
@@ -349,6 +369,15 @@ drawLOp op rest tree =
                     picture []
 
 
+ifFailed : Maybe a -> Maybe a -> Maybe a
+ifFailed next prev =
+    case prev of
+        Nothing ->
+            next
+
+        Just _ ->
+            prev
+
 
 drawShapes : String -> ProofTree -> List (Html Msg)
 drawShapes op tree =
@@ -367,6 +396,44 @@ drawShapes op tree =
 
         LOp l ->
             drawLOp op LOp l
+
+
+findDifferenceS : (SquareOp -> ProofTree) -> ProofTree -> SquareOp -> Maybe ProofTree
+findDifferenceS diff small large =
+    if small == SOp large then
+        Just (diff UnitS)
+    else
+        case large of
+            Square _ ->
+                Nothing
+
+            Split4 s1 s2 s3 s4 ->
+                findDifferenceS (diff << \x -> Split4 x s2 s3 s4) small s1
+                    |> ifFailed ((findDifferenceS (diff << \x -> Split4 s1 x s3 s4)) small s2)
+                    |> ifFailed ((findDifferenceS (diff << \x -> Split4 s1 s2 x s4)) small s3)
+                    |> ifFailed ((findDifferenceS (diff << Split4 s1 s2 s3)) small s4)
+
+            _ ->
+                Nothing
+
+
+findDifferenceR : (RectOp -> ProofTree) -> ProofTree -> RectOp -> Maybe ProofTree
+findDifferenceR diff small large =
+    if small == ROp large then
+        Just (diff UnitR)
+    else
+        Nothing
+
+
+
+findDifference : ProofTree -> ProofTree -> Maybe ProofTree
+findDifference small large =
+        case large of
+            SOp s ->
+                findDifferenceS SOp small s
+            _ ->
+                Nothing
+
 
 
 view : Model -> Document Msg
