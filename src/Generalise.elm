@@ -16,7 +16,9 @@ type SquareOp
     | Split4 SquareOp SquareOp SquareOp SquareOp
     | SplitDiaS TriOp TriOp
     | Square Int
-    | UnitS
+    | RecurseS
+    | RepeatS { a : Int, b : Int, repeat : SquareOp, tail : SquareOp }
+    | NextS
 
 
 type RectOp
@@ -25,13 +27,17 @@ type RectOp
     | ToSquare SquareOp
     | Rotate RectOp
     | Rect Int Int
-    | UnitR
+    | RecurseR
+    | RepeatR { a : Int, b : Int, repeat : RectOp, tail : RectOp }
+    | NextR
 
 
 type FrameOp
     = SplitFrame RectOp RectOp RectOp RectOp
     | Frame Int Int
-    | UnitF
+    | RecurseF
+    | RepeatF { a : Int, b : Int, repeat : FrameOp, tail : FrameOp }
+    | NextF
 
 
 type TriOp
@@ -39,13 +45,17 @@ type TriOp
     | LCutT LOp TriOp
     | SplitSide RectOp TriOp
     | Tri Int
-    | UnitT
+    | RecurseT
+    | RepeatT { a : Int, b : Int, repeat : TriOp, tail : TriOp }
+    | NextT
 
 
 type LOp
     = SplitEnds RectOp LOp
     | L Int
-    | UnitL
+    | RecurseL
+    | RepeatL { a : Int, b : Int, repeat : LOp, tail : LOp }
+    | NextL
 
 
 type ProofTree
@@ -54,6 +64,20 @@ type ProofTree
     | FOp FrameOp
     | TOp TriOp
     | LOp LOp
+
+
+type alias SchematicProof =
+    { step : ProofTree
+    , base : ProofTree
+    }
+
+
+type Repeater
+    = SRepeater { a : Int, b : Int, repeat : SquareOp, tail : SquareOp, i : Int }
+    | RRepeater { a : Int, b : Int, repeat : RectOp, tail : RectOp, i : Int }
+    | FRepeater { a : Int, b : Int, repeat : FrameOp, tail : FrameOp, i : Int }
+    | TRepeater { a : Int, b : Int, repeat : TriOp, tail : TriOp, i : Int }
+    | LRepeater { a : Int, b : Int, repeat : LOp, tail : LOp, i : Int }
 
 
 type Stage
@@ -140,7 +164,13 @@ column start end x =
 drawSOp : String -> (SquareOp -> ProofTree) -> SquareOp -> List (Html Msg)
 drawSOp op rest tree =
     case tree of
-        UnitS ->
+        RecurseS ->
+            []
+
+        RepeatS _ ->
+            []
+
+        NextS ->
             []
 
         LCutS l s ->
@@ -207,7 +237,13 @@ drawSOp op rest tree =
 drawROp : String -> (RectOp -> ProofTree) -> RectOp -> List (Html Msg)
 drawROp op rest tree =
     case tree of
-        UnitR ->
+        RecurseR ->
+            []
+
+        RepeatR _ ->
+            []
+
+        NextR ->
             []
 
         SplitSquare s r ->
@@ -263,7 +299,13 @@ drawROp op rest tree =
 drawTOp : String -> (TriOp -> ProofTree) -> TriOp -> List (Html Msg)
 drawTOp op rest tree =
     case tree of
-        UnitT ->
+        RecurseT ->
+            []
+
+        RepeatT _ ->
+            []
+
+        NextT ->
             []
 
         SplitTST t1 s t2 ->
@@ -312,7 +354,13 @@ drawTOp op rest tree =
 drawFOp : String -> (FrameOp -> ProofTree) -> FrameOp -> List (Html Msg)
 drawFOp op rest tree =
     case tree of
-        UnitF ->
+        RecurseF ->
+            []
+
+        RepeatF _ ->
+            []
+
+        NextF ->
             []
 
         SplitFrame r1 r2 r3 r4 ->
@@ -344,7 +392,13 @@ drawFOp op rest tree =
 drawLOp : String -> (LOp -> ProofTree) -> LOp -> List (Html Msg)
 drawLOp op rest tree =
     case tree of
-        UnitL ->
+        RecurseL ->
+            []
+
+        RepeatL _ ->
+            []
+
+        NextL ->
             []
 
         SplitEnds r l ->
@@ -398,32 +452,296 @@ drawShapes op tree =
             drawLOp op LOp l
 
 
+sEq : SquareOp -> SquareOp -> Bool
+sEq s1 s2 =
+    case (s1, s2) of
+        (RecurseS, _) ->
+            True
+
+        (_, RecurseS) ->
+            True
+
+        (Square _, Square _) ->
+            True
+
+        (LCutS l11 s11, LCutS l21 s21) ->
+            lEq l11 l21 && sEq s11 s21
+
+        (Split4 s11 s12 s13 s14, Split4 s21 s22 s23 s24) ->
+            sEq s11 s21 && sEq s12 s22 && sEq s13 s23 && sEq s14 s24
+
+        (SplitDiaS t11 t12, SplitDiaS t21 t22) ->
+            tEq t11 t21 && tEq t12 t22
+
+        (SplitOuterFrame f11 s11, SplitOuterFrame f21 s21) ->
+            fEq f11 f21 && sEq s11 s21
+
+        (SplitInnerSquare f11 s11, SplitInnerSquare f21 s21) ->
+            fEq f11 f21 && sEq s11 s21
+
+        _ ->
+            False
+
+
+rEq : RectOp -> RectOp -> Bool
+rEq r1 r2 =
+    case (r1, r2) of
+        (RecurseR, _) ->
+            True
+
+        (_, RecurseR) ->
+            True
+
+        (Rect _ _, Rect _ _) ->
+            True
+
+        (SplitSquare s11 r11, SplitSquare s21 r21) ->
+            sEq s11 s21 && rEq r11 r21
+
+        (SplitDiaR t11 t12, SplitDiaR t21 t22) ->
+            tEq t11 t21 && tEq t12 t22
+
+        _ ->
+            False
+
+
+tEq : TriOp -> TriOp -> Bool
+tEq t1 t2 =
+    case (t1, t2) of
+        (RecurseT, _) ->
+            True
+
+        (_, RecurseT) ->
+            True
+
+        (Tri _, Tri _) ->
+            True
+
+        (LCutT l11 t11, LCutT l21 t21) ->
+            lEq l11 l21 && tEq t11 t21
+
+        (SplitTST t11 s11 t12, SplitTST t21 s21 t22) ->
+            tEq t11 t21 && sEq s11 s21 && tEq t12 t22
+
+        (SplitSide r11 t11, SplitSide r21 t21) ->
+            rEq r11 r21 && tEq t11 t21
+
+        _ ->
+            False
+
+
+fEq : FrameOp -> FrameOp -> Bool
+fEq f1 f2 =
+    case (f1, f2) of
+        (RecurseF, _) ->
+            True
+
+        (_, RecurseF) ->
+            True
+
+        (Frame _ _, Frame _ _) ->
+            True
+
+        (SplitFrame r11 r12 r13 r14, SplitFrame r21 r22 r23 r24) ->
+            rEq r11 r21 && rEq r12 r22 && rEq r13 r23 && rEq r14 r24
+
+        _ ->
+            False
+
+
+lEq : LOp -> LOp -> Bool
+lEq l1 l2 =
+    case (l1, l2) of
+        (RecurseL, _) ->
+            True
+
+        (_, RecurseL) ->
+            True
+
+        (L _, L _) ->
+            True
+
+        (SplitEnds r11 l11, SplitEnds r21 l21) ->
+            rEq r11 r21 && lEq l11 l21
+
+        _ ->
+            False
+
+
+ptEq : ProofTree -> ProofTree -> Bool
+ptEq p1 p2 =
+    case (p1, p2) of
+        (SOp s1, SOp s2) ->
+            sEq s1 s2
+
+        (ROp r1, ROp r2) ->
+            rEq r1 r2
+
+        (TOp t1, TOp t2) ->
+            tEq t1 t2
+
+        (FOp f1, FOp f2) ->
+            fEq f1 f2
+
+        (LOp l1, LOp l2) ->
+            lEq l1 l2
+
+        _ ->
+            False
+
+
 findDifferenceS : (SquareOp -> ProofTree) -> ProofTree -> SquareOp -> Maybe ProofTree
 findDifferenceS diff small large =
-    if small == SOp large then
-        Just (diff UnitS)
+    if ptEq small (SOp large) then
+        Just (diff RecurseS)
     else
         case large of
             Square _ ->
                 Nothing
 
+            RecurseS ->
+                Nothing
+
+            RepeatS _ ->
+                Nothing
+
+            NextS ->
+                Nothing
+
             Split4 s1 s2 s3 s4 ->
                 findDifferenceS (diff << \x -> Split4 x s2 s3 s4) small s1
-                    |> ifFailed ((findDifferenceS (diff << \x -> Split4 s1 x s3 s4)) small s2)
-                    |> ifFailed ((findDifferenceS (diff << \x -> Split4 s1 s2 x s4)) small s3)
-                    |> ifFailed ((findDifferenceS (diff << Split4 s1 s2 s3)) small s4)
+                    |> ifFailed (findDifferenceS (diff << \x -> Split4 s1 x s3 s4) small s2)
+                    |> ifFailed (findDifferenceS (diff << \x -> Split4 s1 s2 x s4) small s3)
+                    |> ifFailed (findDifferenceS (diff << Split4 s1 s2 s3) small s4)
 
-            _ ->
-                Nothing
+            LCutS l s ->
+                findDifferenceL (diff << \x -> LCutS x s) small l
+                    |> ifFailed ((findDifferenceS (diff << LCutS l)) small s)
+
+            SplitOuterFrame f s ->
+                findDifferenceF (diff << \x -> SplitOuterFrame x s) small f
+                    |> ifFailed (findDifferenceS (diff << SplitOuterFrame f) small s)
+
+            SplitInnerSquare f s ->
+                findDifferenceF (diff << \x -> SplitInnerSquare x s) small f
+                    |> ifFailed (findDifferenceS (diff << SplitInnerSquare f) small s)
+
+            SplitDiaS t1 t2 ->
+                findDifferenceT (diff << \x -> SplitDiaS x t2) small t1
+                    |> ifFailed (findDifferenceT (diff << SplitDiaS t1) small t2)
+
 
 
 findDifferenceR : (RectOp -> ProofTree) -> ProofTree -> RectOp -> Maybe ProofTree
 findDifferenceR diff small large =
-    if small == ROp large then
-        Just (diff UnitR)
+    if ptEq small (ROp large) then
+        Just (diff RecurseR)
     else
-        Nothing
+        case large of
+            Rect _ _ ->
+                Nothing
 
+            RecurseR ->
+                Nothing
+
+            RepeatR _ ->
+                Nothing
+
+            NextR ->
+                Nothing
+
+            SplitSquare s r ->
+                findDifferenceS (diff << \x -> SplitSquare x r) small s
+                    |> ifFailed (findDifferenceR (diff << SplitSquare s) small r)
+
+            SplitDiaR t1 t2 ->
+                findDifferenceT (diff << \x -> SplitDiaR x t2) small t1
+                    |> ifFailed (findDifferenceT (diff << SplitDiaR t1) small t2)
+
+            ToSquare s ->
+                findDifferenceS (diff << ToSquare) small s
+
+            Rotate r ->
+                findDifferenceR (diff << Rotate) small r
+
+
+findDifferenceT : (TriOp -> ProofTree) -> ProofTree -> TriOp -> Maybe ProofTree
+findDifferenceT diff small large =
+    if ptEq small (TOp large) then
+        Just (diff RecurseT)
+    else
+        case large of
+            Tri _ ->
+                Nothing
+
+            RecurseT ->
+                Nothing
+
+            RepeatT _ ->
+                Nothing
+
+            NextT ->
+                Nothing
+
+            SplitTST t1 s t2 ->
+                findDifferenceT (diff << \x -> SplitTST x s t2) small t1
+                    |> ifFailed (findDifferenceS (diff << \x -> SplitTST t1 x t2) small s)
+                    |> ifFailed (findDifferenceT (diff << SplitTST t1 s) small t2)
+
+            LCutT l t ->
+                findDifferenceL (diff << \x -> LCutT x t) small l
+                    |> ifFailed (findDifferenceT (diff << LCutT l) small t)
+
+            SplitSide r t ->
+                findDifferenceR (diff << \x -> SplitSide x t) small r
+                    |> ifFailed (findDifferenceT (diff << SplitSide r) small t)
+
+
+findDifferenceF : (FrameOp -> ProofTree) -> ProofTree -> FrameOp -> Maybe ProofTree
+findDifferenceF diff small large =
+    if ptEq small (FOp large) then
+        Just (diff RecurseF)
+    else
+        case large of
+            Frame _ _ ->
+                Nothing
+
+            RecurseF ->
+                Nothing
+
+            RepeatF _ ->
+                Nothing
+
+            NextF ->
+                Nothing
+
+            SplitFrame r1 r2 r3 r4 ->
+                findDifferenceR (diff << \x -> SplitFrame x r2 r3 r4) small r1
+                    |> ifFailed (findDifferenceR (diff << \x -> SplitFrame r1 x r3 r4) small r2)
+                    |> ifFailed (findDifferenceR (diff << \x -> SplitFrame r1 r2 x r4) small r3)
+                    |> ifFailed (findDifferenceR (diff << SplitFrame r1 r2 r3) small r4)
+
+findDifferenceL : (LOp -> ProofTree) -> ProofTree -> LOp -> Maybe ProofTree
+findDifferenceL diff small large =
+    if ptEq small (LOp large) then
+        Just (diff RecurseL)
+    else
+        case large of
+            L _ ->
+                Nothing
+
+            RecurseL ->
+                Nothing
+
+            RepeatL _ ->
+                Nothing
+
+            NextL ->
+                Nothing
+
+            SplitEnds r l ->
+                findDifferenceR (diff << \x -> SplitEnds x l) small r
+                    |> ifFailed (findDifferenceL (diff << SplitEnds r) small l)
 
 
 findDifference : ProofTree -> ProofTree -> Maybe ProofTree
@@ -431,8 +749,229 @@ findDifference small large =
         case large of
             SOp s ->
                 findDifferenceS SOp small s
-            _ ->
-                Nothing
+
+            ROp r ->
+                findDifferenceR ROp small r
+
+            TOp t ->
+                findDifferenceT TOp small t
+
+            FOp f ->
+                findDifferenceF FOp small f
+
+            LOp l ->
+                findDifferenceL LOp small l
+
+
+buildRepeatS : Maybe Repeater -> Int -> SquareOp -> Maybe SquareOp
+buildRepeatS repeater n sq =
+    case sq of
+        RepeatS { a, b, repeat, tail } ->
+           buildRepeatS (Just (SRepeater { a = a, b = b, repeat = repeat, tail = tail, i = a*n+b })) n repeat
+
+        NextS ->
+            case repeater of
+                Just (SRepeater { a, b, repeat, tail, i }) ->
+                    if i == 0 then
+                        buildRepeatS Nothing n tail
+                    else
+                        buildRepeatS (Just (SRepeater { a = a, b = b, repeat = repeat, tail = tail, i = i-1 })) n repeat
+
+                _ ->
+                    Nothing
+
+        LCutS l s ->
+            Maybe.map2 LCutS (buildRepeatL repeater n l) (buildRepeatS repeater n s)
+
+        SplitOuterFrame f s ->
+            Maybe.map2 SplitOuterFrame (buildRepeatF repeater n f) (buildRepeatS repeater n s)
+
+        SplitInnerSquare f s ->
+            Maybe.map2 SplitInnerSquare (buildRepeatF repeater n f) (buildRepeatS repeater n s)
+
+        SplitDiaS t1 t2 ->
+            Maybe.map2 SplitDiaS (buildRepeatT repeater n t1) (buildRepeatT repeater n t2)
+
+        Split4 s1 s2 s3 s4 ->
+            Maybe.map4 Split4 (buildRepeatS repeater n s1) (buildRepeatS repeater n s2) (buildRepeatS repeater n s3) (buildRepeatS repeater n s4)
+
+        Square x ->
+            Just (Square x)
+
+        RecurseS ->
+            Just RecurseS
+
+
+buildRepeatR : Maybe Repeater -> Int -> RectOp -> Maybe RectOp
+buildRepeatR repeater n re =
+    case re of
+        RepeatR { a, b, repeat, tail } ->
+            buildRepeatR (Just (RRepeater { a = a, b = b, repeat = repeat, tail = tail, i = a*n+b })) n repeat
+
+        NextR ->
+            case repeater of
+                Just (RRepeater { a, b, repeat, tail, i }) ->
+                    if i == 0 then
+                        buildRepeatR Nothing n tail
+                    else
+                        buildRepeatR (Just (RRepeater { a = a, b = b, repeat = repeat, tail = tail, i = i-1 })) n repeat
+
+                _ ->
+                    Nothing
+
+        SplitDiaR t1 t2 ->
+            Maybe.map2 SplitDiaR (buildRepeatT repeater n t1) (buildRepeatT repeater n t2)
+
+        SplitSquare s r ->
+            Maybe.map2 SplitSquare (buildRepeatS repeater n s) (buildRepeatR repeater n r)
+
+        ToSquare s ->
+            Maybe.map ToSquare (buildRepeatS repeater n s)
+
+        Rotate r ->
+            Maybe.map Rotate (buildRepeatR repeater n r)
+
+        Rect x y ->
+            Just (Rect x y)
+
+        RecurseR ->
+            Just RecurseR
+
+
+buildRepeatT : Maybe Repeater -> Int -> TriOp -> Maybe TriOp
+buildRepeatT repeater n tr =
+    case tr of
+        RepeatT { a, b, repeat, tail } ->
+            buildRepeatT (Just (TRepeater { a = a, b = b, repeat = repeat, tail = tail, i = a*n+b })) n repeat
+
+        NextT ->
+            case repeater of
+                Just (TRepeater { a, b, repeat, tail, i }) ->
+                    if i == 0 then
+                        buildRepeatT Nothing n tail
+                    else
+                        buildRepeatT (Just (TRepeater { a = a, b = b, repeat = repeat, tail = tail, i = i-1 })) n repeat
+
+                _ ->
+                    Nothing
+
+        SplitTST t1 s t2 ->
+            Maybe.map3 SplitTST (buildRepeatT repeater n t1) (buildRepeatS repeater n s) (buildRepeatT repeater n t2)
+
+        LCutT l t ->
+            Maybe.map2 LCutT (buildRepeatL repeater n l) (buildRepeatT repeater n t)
+
+        SplitSide r t ->
+            Maybe.map2 SplitSide (buildRepeatR repeater n r) (buildRepeatT repeater n t)
+
+        Tri x ->
+            Just (Tri x)
+
+        RecurseT ->
+            Just RecurseT
+
+
+buildRepeatF : Maybe Repeater -> Int -> FrameOp -> Maybe FrameOp
+buildRepeatF repeater n fr =
+    case fr of
+        RepeatF { a, b, repeat, tail } ->
+            buildRepeatF (Just (FRepeater { a = a, b = b, repeat = repeat, tail = tail, i = a*n+b })) n repeat
+
+        NextF ->
+            case repeater of
+                Just (FRepeater { a, b, repeat, tail, i }) ->
+                    if i == 0 then
+                        buildRepeatF Nothing n tail
+                    else
+                        buildRepeatF (Just (FRepeater { a = a, b = b, repeat = repeat, tail = tail, i = i-1 })) n repeat
+
+                _ ->
+                    Nothing
+
+        SplitFrame r1 r2 r3 r4 ->
+            Maybe.map4 SplitFrame (buildRepeatR repeater n r1) (buildRepeatR repeater n r2) (buildRepeatR repeater n r3) (buildRepeatR repeater n r4)
+
+        Frame x y ->
+            Just (Frame x y)
+
+        RecurseF ->
+            Just RecurseF
+
+
+buildRepeatL : Maybe Repeater -> Int -> LOp -> Maybe LOp
+buildRepeatL repeater n ll =
+    case ll of
+        RepeatL { a, b, repeat, tail } ->
+            buildRepeatL (Just (LRepeater { a = a, b = b, repeat = repeat, tail = tail, i = a*n+b })) n repeat
+
+        NextL ->
+            case repeater of
+                Just (LRepeater { a, b, repeat, tail, i }) ->
+                    if i == 0 then
+                        buildRepeatL Nothing n tail
+                    else
+                        buildRepeatL (Just (LRepeater { a = a, b = b, repeat = repeat, tail = tail, i = i-1 })) n repeat
+
+                _ ->
+                    Nothing
+
+        SplitEnds r l ->
+            Maybe.map2 SplitEnds (buildRepeatR repeater n r) (buildRepeatL repeater n l)
+
+        L x ->
+            Just (L x)
+
+        RecurseL ->
+            Just RecurseL
+
+
+
+buildRepeat : Int -> ProofTree -> Maybe ProofTree
+buildRepeat n tree =
+    case tree of
+        SOp s ->
+            buildRepeatS Nothing n s
+                |> Maybe.map SOp
+
+        ROp r ->
+            buildRepeatR Nothing n r
+                |> Maybe.map ROp
+
+        TOp t ->
+            buildRepeatT Nothing n t
+                |> Maybe.map TOp
+
+        FOp f ->
+            buildRepeatF Nothing n f
+                |> Maybe.map FOp
+
+        LOp l ->
+            buildRepeatL Nothing n l
+                |> Maybe.map LOp
+
+
+infer : (Int, ProofTree) -> (Int, ProofTree) -> Maybe SchematicProof
+infer (n1, p1) (n2, p2) =
+    let
+        (largeN, largeP) =
+            if n1 > n2 then
+                (n1, p1)
+            else
+                (n2, p2)
+
+        (smallN, smallP) =
+            if n1 < n2 then
+                (n1, p1)
+            else
+                (n2, p2)
+
+        diff =
+            findDifference smallP largeP
+    in
+    if large == small || diff == Nothing then
+        Nothing
+    else
+       Nothing
 
 
 
