@@ -7,6 +7,9 @@ import Svg.Attributes exposing (cx, cy, r)
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
+import Arithmetic exposing (gcd, divisors, divides)
+import Maybe.Extra
+import List.Extra
 
 
 type SquareOp
@@ -950,6 +953,468 @@ buildRepeat n tree =
                 |> Maybe.map LOp
 
 
+findPossibleRepeatPointsS : ProofTree -> SquareOp -> List (Maybe (ProofTree, SquareOp -> ProofTree)) -> ProofTree -> (SquareOp -> ProofTree) -> Maybe (List (Maybe (ProofTree, ProofTree)))
+findPossibleRepeatPointsS pt sq ps base rest =
+    case sq of
+        LCutS l s ->
+            let
+                matches =
+                    case pt of
+                        SOp (LCutS _ _) ->
+                            Just (rest RecurseS, SOp)
+
+                        _ ->
+                            Nothing
+
+                branchps x =
+                    matches::ps
+                        |> List.map (Maybe.map (Tuple.mapSecond ((>>) x)))
+
+                branch1 x =
+                    LCutS x s
+
+                branch2 =
+                    LCutS l
+            in
+            findPossibleRepeatPointsL pt l (branchps branch1) base (rest << branch1)
+                |> ifFailed (findPossibleRepeatPointsS pt s (branchps branch2) base (rest << branch2))
+
+        SplitInnerSquare f s ->
+            let
+                matches =
+                    case pt of
+                        SOp (SplitInnerSquare _ _) ->
+                            Just (rest RecurseS, SOp)
+
+                        _ ->
+                            Nothing
+
+                branchps x =
+                    matches::ps
+                        |> List.map (Maybe.map (Tuple.mapSecond ((>>) x)))
+
+                branch1 x =
+                    SplitInnerSquare x s
+
+                branch2 =
+                    SplitInnerSquare f
+            in
+            findPossibleRepeatPointsF pt f (branchps branch1) base (rest << branch1)
+                |> ifFailed (findPossibleRepeatPointsS pt s (branchps branch2) base (rest << branch2))
+
+        SplitOuterFrame f s ->
+            let
+                matches =
+                    case pt of
+                        SOp (SplitOuterFrame _ _) ->
+                            Just (rest RecurseS, SOp)
+
+                        _ ->
+                            Nothing
+
+                branchps x =
+                    matches::ps
+                        |> List.map (Maybe.map (Tuple.mapSecond ((>>) x)))
+
+                branch1 x =
+                    SplitOuterFrame x s
+
+                branch2 =
+                    SplitOuterFrame f
+            in
+            findPossibleRepeatPointsF pt f (branchps branch1) base (rest << branch1)
+                |> ifFailed (findPossibleRepeatPointsS pt s (branchps branch2) base (rest << branch2))
+
+        SplitDiaS t1 t2 ->
+            let
+                matches =
+                    case pt of
+                        SOp (SplitDiaS _ _) ->
+                            Just (rest RecurseS, SOp)
+
+                        _ ->
+                            Nothing
+
+                branchps x =
+                    matches::ps
+                        |> List.map (Maybe.map (Tuple.mapSecond ((>>) x)))
+
+                branch1 x =
+                    SplitDiaS x t2
+
+                branch2 =
+                    SplitDiaS t1
+            in
+            findPossibleRepeatPointsT pt t1 (branchps branch1) base (rest << branch1)
+                |> ifFailed (findPossibleRepeatPointsT pt t2 (branchps branch2) base (rest << branch2))
+
+        Split4 s1 s2 s3 s4 ->
+            let
+                matches =
+                    case pt of
+                        SOp (Split4 _ _ _ _) ->
+                            Just (rest RecurseS, SOp)
+
+                        _ ->
+                            Nothing
+
+                branchps x =
+                    matches::ps
+                        |> List.map (Maybe.map (Tuple.mapSecond ((>>) x)))
+
+                branch1 x =
+                    Split4 x s2 s3 s4
+
+                branch2 x =
+                    Split4 s1 x s3 s4
+
+                branch3 x =
+                    Split4 s1 s2 x s4
+
+                branch4 =
+                    Split4 s1 s2 s3
+            in
+            findPossibleRepeatPointsS pt s1 (branchps branch1) base (rest << branch1)
+                |> ifFailed (findPossibleRepeatPointsS pt s2 (branchps branch2) base (rest << branch2))
+                |> ifFailed (findPossibleRepeatPointsS pt s3 (branchps branch3) base (rest << branch3))
+                |> ifFailed (findPossibleRepeatPointsS pt s4 (branchps branch4) base (rest << branch4))
+
+        Square _ ->
+            Nothing
+
+        NextS ->
+            Nothing
+
+        RepeatS _ ->
+            Nothing
+
+        RecurseS ->
+            case base of
+                SOp s ->
+                    Just (List.map (Maybe.map (Tuple.mapSecond ((|>) s))) ((Just (rest RecurseS, SOp))::ps))
+
+                _ ->
+                    Nothing
+
+
+findPossibleRepeatPointsR : ProofTree -> RectOp -> List (Maybe (ProofTree, RectOp -> ProofTree)) -> ProofTree -> (RectOp -> ProofTree) -> Maybe (List (Maybe (ProofTree, ProofTree)))
+findPossibleRepeatPointsR pt re ps base rest =
+    case re of
+        SplitDiaR t1 t2 ->
+            let
+                matches =
+                    case pt of
+                        ROp (SplitDiaR _ _) ->
+                            Just (rest RecurseR, ROp)
+
+                        _ ->
+                            Nothing
+
+                branchps x =
+                    matches::ps
+                        |> List.map (Maybe.map (Tuple.mapSecond ((>>) x)))
+
+                branch1 x =
+                    SplitDiaR x t2
+
+                branch2 =
+                    SplitDiaR t1
+            in
+            findPossibleRepeatPointsT pt t1 (branchps branch1) base (rest << branch1)
+                |> ifFailed (findPossibleRepeatPointsT pt t2 (branchps branch2) base (rest << branch2))
+
+        SplitSquare s r ->
+            let
+                matches =
+                    case pt of
+                        ROp (SplitSquare _ _) ->
+                            Just (rest RecurseR, ROp)
+
+                        _ ->
+                            Nothing
+
+                branchps x =
+                    matches::ps
+                        |> List.map (Maybe.map (Tuple.mapSecond ((>>) x)))
+
+                branch1 x =
+                    SplitSquare x r
+
+                branch2 =
+                    SplitSquare s
+            in
+            findPossibleRepeatPointsS pt s (branchps branch1) base (rest << branch1)
+                |> ifFailed (findPossibleRepeatPointsR pt r (branchps branch2) base (rest << branch2))
+
+        ToSquare s ->
+            let
+                matches =
+                    case pt of
+                        ROp (ToSquare _) ->
+                            Just (rest RecurseR, ROp)
+
+                        _ ->
+                            Nothing
+
+                branchps x =
+                    matches::ps
+                        |> List.map (Maybe.map (Tuple.mapSecond ((>>) x)))
+            in
+            findPossibleRepeatPointsS pt s (branchps ToSquare) base (rest << ToSquare)
+
+        Rotate r ->
+            let
+                matches =
+                    case pt of
+                        ROp (Rotate _) ->
+                            Just (rest RecurseR, ROp)
+
+                        _ ->
+                            Nothing
+
+                branchps x =
+                    matches::ps
+                        |> List.map (Maybe.map (Tuple.mapSecond ((>>) x)))
+            in
+            findPossibleRepeatPointsR pt r (branchps Rotate) base (rest << Rotate)
+
+        Rect _ _ ->
+            Nothing
+
+        NextR ->
+            Nothing
+
+        RepeatR _ ->
+            Nothing
+
+        RecurseR ->
+            case base of
+                ROp r ->
+                    Just (List.map (Maybe.map (Tuple.mapSecond ((|>) r))) ((Just (rest RecurseR, ROp))::ps))
+
+                _ ->
+                    Nothing
+
+
+findPossibleRepeatPointsT : ProofTree -> TriOp -> List (Maybe (ProofTree, TriOp -> ProofTree)) -> ProofTree -> (TriOp -> ProofTree) -> Maybe (List (Maybe (ProofTree, ProofTree)))
+findPossibleRepeatPointsT pt tr ps base rest =
+    case tr of
+        LCutT l t ->
+            let
+                matches =
+                    case pt of
+                        TOp (LCutT _ _) ->
+                            Just (rest RecurseT, TOp)
+
+                        _ ->
+                            Nothing
+
+                branchps x =
+                    matches::ps
+                        |> List.map (Maybe.map (Tuple.mapSecond ((>>) x)))
+
+                branch1 x =
+                    LCutT x t
+
+                branch2 =
+                    LCutT l
+            in
+            findPossibleRepeatPointsL pt l (branchps branch1) base (rest << branch1)
+                |> ifFailed (findPossibleRepeatPointsT pt t (branchps branch2) base (rest << branch2))
+
+        SplitSide r t ->
+            let
+                matches =
+                    case pt of
+                        TOp (SplitSide _ _) ->
+                            Just (rest RecurseT, TOp)
+
+                        _ ->
+                            Nothing
+
+                branchps x =
+                    matches::ps
+                        |> List.map (Maybe.map (Tuple.mapSecond ((>>) x)))
+
+                branch1 x =
+                    SplitSide x t
+
+                branch2 =
+                    SplitSide r
+            in
+            findPossibleRepeatPointsR pt r (branchps branch1) base (rest << branch1)
+                |> ifFailed (findPossibleRepeatPointsT pt t (branchps branch2) base (rest << branch2))
+
+        SplitTST t1 s t2 ->
+            let
+                matches =
+                    case pt of
+                        TOp (SplitTST _ _ _) ->
+                            Just (rest RecurseT, TOp)
+
+                        _ ->
+                            Nothing
+
+                branchps x =
+                    matches::ps
+                        |> List.map (Maybe.map (Tuple.mapSecond ((>>) x)))
+
+                branch1 x =
+                    SplitTST x s t2
+
+                branch2 x =
+                    SplitTST t1 x t2
+
+                branch3 =
+                    SplitTST t1 s
+            in
+            findPossibleRepeatPointsT pt t1 (branchps branch1) base (rest << branch1)
+                |> ifFailed (findPossibleRepeatPointsS pt s (branchps branch2) base (rest << branch2))
+                |> ifFailed (findPossibleRepeatPointsT pt t2 (branchps branch3) base (rest << branch3))
+
+
+        Tri _ ->
+            Nothing
+
+        NextT ->
+            Nothing
+
+        RepeatT _ ->
+            Nothing
+
+        RecurseT ->
+            case base of
+                TOp t ->
+                    Just (List.map (Maybe.map (Tuple.mapSecond ((|>) t))) ((Just (rest RecurseT, TOp))::ps))
+
+                _ ->
+                    Nothing
+
+
+findPossibleRepeatPointsF : ProofTree -> FrameOp -> List (Maybe (ProofTree, FrameOp -> ProofTree)) -> ProofTree -> (FrameOp -> ProofTree) -> Maybe (List (Maybe (ProofTree, ProofTree)))
+findPossibleRepeatPointsF pt fr ps base rest =
+    case fr of
+        SplitFrame r1 r2 r3 r4 ->
+            let
+                matches =
+                    case pt of
+                        FOp (SplitFrame _ _ _ _) ->
+                            Just (rest RecurseF, FOp)
+
+                        _ ->
+                            Nothing
+
+                branchps x =
+                    matches::ps
+                        |> List.map (Maybe.map (Tuple.mapSecond ((>>) x)))
+
+                branch1 x =
+                    SplitFrame x r2 r3 r4
+
+                branch2 x =
+                    SplitFrame r1 x r3 r4
+
+                branch3 x =
+                    SplitFrame r1 r2 x r4
+
+                branch4 =
+                    SplitFrame r1 r2 r3
+            in
+            findPossibleRepeatPointsR pt r1 (branchps branch1) base (rest << branch1)
+                |> ifFailed (findPossibleRepeatPointsR pt r2 (branchps branch2) base (rest << branch2))
+                |> ifFailed (findPossibleRepeatPointsR pt r3 (branchps branch3) base (rest << branch3))
+                |> ifFailed (findPossibleRepeatPointsR pt r4 (branchps branch4) base (rest << branch4))
+
+        Frame _ _ ->
+            Nothing
+
+        NextF ->
+            Nothing
+
+        RepeatF _ ->
+            Nothing
+
+        RecurseF ->
+            case base of
+                FOp f ->
+                    Just (List.map (Maybe.map (Tuple.mapSecond ((|>) f))) ((Just (rest RecurseF, FOp))::ps))
+
+                _ ->
+                    Nothing
+
+
+findPossibleRepeatPointsL : ProofTree -> LOp -> List (Maybe (ProofTree, LOp -> ProofTree)) -> ProofTree -> (LOp -> ProofTree) -> Maybe (List (Maybe (ProofTree, ProofTree)))
+findPossibleRepeatPointsL pt ll ps base rest =
+    case ll of
+        SplitEnds r l ->
+            let
+                matches =
+                    case pt of
+                        LOp (SplitEnds _ _) ->
+                            Just (rest RecurseL, LOp)
+
+                        _ ->
+                            Nothing
+
+                branchps x =
+                    matches::ps
+                        |> List.map (Maybe.map (Tuple.mapSecond ((>>) x)))
+
+                branch1 x =
+                    SplitEnds x l
+
+                branch2 =
+                    SplitEnds r
+            in
+            findPossibleRepeatPointsR pt r (branchps branch1) base (rest << branch1)
+                |> ifFailed (findPossibleRepeatPointsL pt l (branchps branch2) base (rest << branch2))
+
+        L _ ->
+            Nothing
+
+        NextL ->
+            Nothing
+
+        RepeatL _ ->
+            Nothing
+
+        RecurseL ->
+            case base of
+                LOp l ->
+                    Just (List.map (Maybe.map (Tuple.mapSecond ((|>) l))) ((Just (rest RecurseL, LOp))::ps))
+
+                _ ->
+                    Nothing
+
+
+findPossibleRepeatPoints : ProofTree -> ProofTree -> Maybe (List (Maybe (ProofTree, ProofTree)))
+findPossibleRepeatPoints base pt =
+    case pt of
+        SOp s ->
+            findPossibleRepeatPointsS pt s [] base SOp
+                |> Maybe.map List.reverse
+
+        ROp r ->
+            findPossibleRepeatPointsR pt r [] base ROp
+                |> Maybe.map List.reverse
+
+        TOp t ->
+            findPossibleRepeatPointsT pt t [] base TOp
+                |> Maybe.map List.reverse
+
+        FOp f ->
+            findPossibleRepeatPointsF pt f [] base FOp
+                |> Maybe.map List.reverse
+
+        LOp l ->
+            findPossibleRepeatPointsL pt l [] base LOp
+                |> Maybe.map List.reverse
+
+tryStepCase : (ProofTree, ProofTree) -> Maybe SchematicProof
+tryStepCase (step, base) =
+    Nothing
+
+
 infer : (Int, ProofTree) -> (Int, ProofTree) -> Maybe SchematicProof
 infer (n1, p1) (n2, p2) =
     let
@@ -965,14 +1430,31 @@ infer (n1, p1) (n2, p2) =
             else
                 (n2, p2)
 
-        diff =
+        mDiff =
             findDifference smallP largeP
-    in
-    if large == small || diff == Nothing then
-        Nothing
-    else
-       Nothing
 
+        testPossibleRepeats ps rNums =
+            case rNums of
+                (r::rs) ->
+                    if List.all (\x -> x) (List.indexedMap (\i p -> if divides ((List.length ps - 1)//r) i then Maybe.Extra.isJust p else True) ps) then
+                        List.Extra.getAt ((List.length ps - 1)//r) ps
+                            |> Maybe.andThen tryStepCase
+                            |> ifFailed (testPossibleRepeats ps rs)
+                    else
+                        testPossibleRepeats ps rs
+
+                [] ->
+                    Nothing
+    in
+    case (Maybe.andThen (findPossibleRepeatPoints smallP) mDiff, mDiff, largeN == smallN) of
+        (Just ps, Just diff, False) ->
+            gcd (largeN - smallN) (List.length ps - 1)
+                |> divisors
+                |> List.reverse
+                |> testPossibleRepeats ps
+
+        _ ->
+            Nothing
 
 
 view : Model -> Document Msg
