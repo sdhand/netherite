@@ -12,6 +12,11 @@ import Maybe.Extra
 import List.Extra
 
 
+type LinEq
+    = Solved { a : Int, b : Int }
+    | Unsolved Int
+
+
 type SquareOp
     = LCutS LOp SquareOp
     | SplitInnerSquare FrameOp SquareOp
@@ -20,7 +25,7 @@ type SquareOp
     | SplitDiaS TriOp TriOp
     | Square Int
     | RecurseS
-    | RepeatS { a : Int, b : Int, repeat : SquareOp, tail : SquareOp }
+    | RepeatS { ab : LinEq, repeat : SquareOp, tail : SquareOp }
     | NextS
 
 
@@ -31,7 +36,7 @@ type RectOp
     | Rotate RectOp
     | Rect Int Int
     | RecurseR
-    | RepeatR { a : Int, b : Int, repeat : RectOp, tail : RectOp }
+    | RepeatR { ab : LinEq, repeat : RectOp, tail : RectOp }
     | NextR
 
 
@@ -39,7 +44,7 @@ type FrameOp
     = SplitFrame RectOp RectOp RectOp RectOp
     | Frame Int Int
     | RecurseF
-    | RepeatF { a : Int, b : Int, repeat : FrameOp, tail : FrameOp }
+    | RepeatF { ab : LinEq, repeat : FrameOp, tail : FrameOp }
     | NextF
 
 
@@ -49,7 +54,7 @@ type TriOp
     | SplitSide RectOp TriOp
     | Tri Int
     | RecurseT
-    | RepeatT { a : Int, b : Int, repeat : TriOp, tail : TriOp }
+    | RepeatT { ab : LinEq, repeat : TriOp, tail : TriOp }
     | NextT
 
 
@@ -57,7 +62,7 @@ type LOp
     = SplitEnds RectOp LOp
     | L Int
     | RecurseL
-    | RepeatL { a : Int, b : Int, repeat : LOp, tail : LOp }
+    | RepeatL { ab : LinEq, repeat : LOp, tail : LOp }
     | NextL
 
 
@@ -769,8 +774,13 @@ findDifference small large =
 buildRepeatS : Maybe Repeater -> Int -> SquareOp -> Maybe SquareOp
 buildRepeatS repeater n sq =
     case sq of
-        RepeatS { a, b, repeat, tail } ->
-           buildRepeatS (Just (SRepeater { a = a, b = b, repeat = repeat, tail = tail, i = a*n+b })) n repeat
+        RepeatS { ab, repeat, tail } ->
+            case ab of
+                Solved {a, b} ->
+                    buildRepeatS (Just (SRepeater { a = a, b = b, repeat = repeat, tail = tail, i = a*n+b })) n repeat
+
+                Unsolved _ ->
+                    Just sq
 
         NextS ->
             case repeater of
@@ -808,8 +818,13 @@ buildRepeatS repeater n sq =
 buildRepeatR : Maybe Repeater -> Int -> RectOp -> Maybe RectOp
 buildRepeatR repeater n re =
     case re of
-        RepeatR { a, b, repeat, tail } ->
-            buildRepeatR (Just (RRepeater { a = a, b = b, repeat = repeat, tail = tail, i = a*n+b })) n repeat
+        RepeatR { ab, repeat, tail } ->
+            case ab of
+                Solved {a, b} ->
+                    buildRepeatR (Just (RRepeater { a = a, b = b, repeat = repeat, tail = tail, i = a*n+b })) n repeat
+
+                Unsolved _ ->
+                    Just re
 
         NextR ->
             case repeater of
@@ -844,8 +859,13 @@ buildRepeatR repeater n re =
 buildRepeatT : Maybe Repeater -> Int -> TriOp -> Maybe TriOp
 buildRepeatT repeater n tr =
     case tr of
-        RepeatT { a, b, repeat, tail } ->
-            buildRepeatT (Just (TRepeater { a = a, b = b, repeat = repeat, tail = tail, i = a*n+b })) n repeat
+        RepeatT { ab, repeat, tail } ->
+            case ab of
+                Solved {a, b} ->
+                    buildRepeatT (Just (TRepeater { a = a, b = b, repeat = repeat, tail = tail, i = a*n+b })) n repeat
+
+                Unsolved _ ->
+                    Just tr
 
         NextT ->
             case repeater of
@@ -877,8 +897,13 @@ buildRepeatT repeater n tr =
 buildRepeatF : Maybe Repeater -> Int -> FrameOp -> Maybe FrameOp
 buildRepeatF repeater n fr =
     case fr of
-        RepeatF { a, b, repeat, tail } ->
-            buildRepeatF (Just (FRepeater { a = a, b = b, repeat = repeat, tail = tail, i = a*n+b })) n repeat
+        RepeatF { ab, repeat, tail } ->
+            case ab of
+                Solved {a, b} ->
+                    buildRepeatF (Just (FRepeater { a = a, b = b, repeat = repeat, tail = tail, i = a*n+b })) n repeat
+
+                Unsolved _ ->
+                    Just fr
 
         NextF ->
             case repeater of
@@ -904,8 +929,13 @@ buildRepeatF repeater n fr =
 buildRepeatL : Maybe Repeater -> Int -> LOp -> Maybe LOp
 buildRepeatL repeater n ll =
     case ll of
-        RepeatL { a, b, repeat, tail } ->
-            buildRepeatL (Just (LRepeater { a = a, b = b, repeat = repeat, tail = tail, i = a*n+b })) n repeat
+        RepeatL { ab, repeat, tail } ->
+            case ab of
+                Solved {a, b} ->
+                    buildRepeatL (Just (LRepeater { a = a, b = b, repeat = repeat, tail = tail, i = a*n+b })) n repeat
+
+                Unsolved _ ->
+                    Just ll
 
         NextL ->
             case repeater of
@@ -1410,9 +1440,9 @@ findPossibleRepeatPoints base pt =
             findPossibleRepeatPointsL pt l [] base LOp
                 |> Maybe.map List.reverse
 
-tryStepCase : (ProofTree, ProofTree) -> Maybe SchematicProof
-tryStepCase (step, base) =
-    Nothing
+tryStepCase : (Int, Int) -> (ProofTree, ProofTree) -> Maybe SchematicProof
+tryStepCase (stepN, baseN) (step, base) =
+    Nothing 
 
 
 infer : (Int, ProofTree) -> (Int, ProofTree) -> Maybe SchematicProof
@@ -1438,7 +1468,8 @@ infer (n1, p1) (n2, p2) =
                 (r::rs) ->
                     if List.all (\x -> x) (List.indexedMap (\i p -> if divides ((List.length ps - 1)//r) i then Maybe.Extra.isJust p else True) ps) then
                         List.Extra.getAt ((List.length ps - 1)//r) ps
-                            |> Maybe.andThen tryStepCase
+                            |> Maybe.withDefault Nothing
+                            |> Maybe.andThen (tryStepCase (largeN, largeN - (largeN-smallN)//r))
                             |> ifFailed (testPossibleRepeats ps rs)
                     else
                         testPossibleRepeats ps rs
