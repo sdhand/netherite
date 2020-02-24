@@ -1440,9 +1440,44 @@ findPossibleRepeatPoints base pt =
             findPossibleRepeatPointsL pt l [] base LOp
                 |> Maybe.map List.reverse
 
+
+findRepeats : ProofTree -> ProofTree
+findRepeats pt =
+    case pt of
+        SOp ss ->
+            findRepeatS s
+
+        ROp r ->
+            findRepeatR r
+
+        FOp f ->
+            findRepeatF f
+
+        TOp t ->
+            findRepeatT t
+
+        LOp l ->
+            findRepeatL l
+
+
 tryStepCase : (Int, Int) -> (ProofTree, ProofTree) -> Maybe SchematicProof
 tryStepCase (stepN, baseN) (step, base) =
-    Nothing 
+    let
+        generalStep =
+            findRepeats step
+                |> inferFunctions (stepN, baseN) base
+    in
+    case generalStep of
+        Just gStep ->
+            case findLowerDifference gStep of
+                Nothing ->
+                    Nothing
+
+                Just diff ->
+                    { step = gStep, base = diff }
+
+        Nothing ->
+            Nothing
 
 
 infer : (Int, ProofTree) -> (Int, ProofTree) -> Maybe SchematicProof
