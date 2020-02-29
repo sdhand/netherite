@@ -1441,23 +1441,111 @@ findPossibleRepeatPoints base pt =
                 |> Maybe.map List.reverse
 
 
-findRepeats : ProofTree -> ProofTree
-findRepeats pt =
+
+findRepeatS : SquareOp -> (SquareOp -> ProofTree)
+findRepeatS ss trial =
+    let
+        recurse () =
+            case ss of
+                LCutS ->
+                    findRepeatL l (trial << \x -> LcutS x s)
+                        |> ifFailed (findRepeatS s (trial << LCutS l))
+    case trial NextS of
+        SOp s ->
+            let
+                (repeatNum, tail) =
+                    countOccurancesS s ss
+            in
+            if repeatNum > 0 then
+                    case inferFunction (rest (SOp (RepeatS { ab = Unsolved (repeatNum + 1), repeat = s, tail = tail }))) of
+                        Just sol ->
+                            if sol.a == 0 then
+                                recurse ()
+
+                            else
+                                Just (SOp (RepeatS { ab = Solved sol, repeat = s, tail = tail }))
+
+                        _ ->
+                            Nothing
+            else
+                recurse ()
+
+        _ ->
+            recurse ()
+
+
+findRepeatS : SquareOp -> (SquareOp -> ProofTree) -> (SquareOp -> ProofTree) -> ProofTree -> Maybe ProofTree
+findRepeatS ss trial rest small =
+    case ss of
+        LCutS l s ->
+            let
+                searchD () =
+                    findRepeatL l (trial << \x -> LCutS x s) (rest << \x -> LCutS x s) small
+                        |> ifFailed (findRepeatS s (trial << LCutS l) (rest << LCutS l) small)
+            in
+            case trial (LCutS NextL s) of
+                LOp lRepeat ->
+                    let
+                        (repeatNum, tail) =
+                            countOccurancesL lRepeat l
+                    in
+                    if repeatNum > 0 then
+                        case inferFunction (rest (RepeatL { ab = Unsolved (repeatNum + 1), repeat = lRepeat, tail = tail })) small of
+                            Just sol ->
+                                if sol.a == 0 then
+                                    searchD ()
+
+                                else
+                                    Just (LOp (RepeatL { ab = LinEq sol, repeat = lRepeat, tail = tail }))
+
+                SOp sRepeat ->
+                    let
+                        (repeatNum, tail) =
+                            countOccurancesS (\x -> LCutS x s)  s
+                    in
+                    if repeatNum > 0 then
+                        case inferFunction (rest (RepeatS { ab = Unsolved (repeatNum + 1), repeat = sRepeat, tail = tail })) small of
+                            Just sol ->
+                                if sol.a == 0 then
+                                    searchD ()
+
+                                else
+                                    Just (SOp (RepeatS { ab = LinEq sol, repeat = sRepeat, tail = tail }))
+
+                _ ->
+                    searchD ()
+
+
+
+repeatSearchS : SquareOp -> (SquareOp -> ProofTree) -> ProofTree
+repeatSearchS ss rest =
+    case findRepeatS ss SOp rest small of
+        Just (SOp (RepeatS repeat)) ->
+            { repeat | tail = repeatSearchS repeat.tail (rest << \x -> { repeat | tail = x }) }
+
+        _ ->
+            LCutS l s ->
+                repeatSearchL l (rest << \x -> LCutS x s)
+                    |> (rest << LCutS) >> repeatSearchS s
+
+
+repeatSearch : Int -> ProofTree -> Int -> ProofTree -> ProofTree
+repeatSearch smallN small largeN large =
     case pt of
-        SOp ss ->
-            findRepeatS s
+        SOp s ->
+            repeatSearchS s SOp
 
         ROp r ->
-            findRepeatR r
+            repeatSearchR r ROp
 
         FOp f ->
-            findRepeatF f
+            repeatSearchF f FOp
 
         TOp t ->
-            findRepeatT t
+            repeatSearchT t TOp
 
         LOp l ->
-            findRepeatL l
+            repeatSearchL l LOp
 
 
 tryStepCase : (Int, Int) -> (ProofTree, ProofTree) -> Maybe SchematicProof
