@@ -13,16 +13,16 @@ import List.Extra
 
 
 type alias Occurances a =
-    { s : (a -> SquareOp) -> SquareOp -> (a -> ProofTree) -> Int -> ProofTree -> Int -> Maybe (Repeat a)
-    , r : (a -> RectOp) -> RectOp -> (a -> ProofTree) -> Int -> ProofTree -> Int -> Maybe (Repeat a)
-    , t : (a -> TriOp) -> TriOp -> (a -> ProofTree) -> Int -> ProofTree -> Int -> Maybe (Repeat a)
-    , f : (a -> FrameOp) -> FrameOp -> (a -> ProofTree) -> Int -> ProofTree -> Int -> Maybe (Repeat a)
-    , l : (a -> LOp) -> LOp -> (a -> ProofTree) -> Int -> ProofTree -> Int -> Maybe (Repeat a)
+    { s : (SquareOp -> a) -> SquareOp -> (a -> ProofTree) -> Int -> ProofTree -> Int -> Maybe (Repeat a)
+    , r : (RectOp -> a) -> RectOp -> (a -> ProofTree) -> Int -> ProofTree -> Int -> Maybe (Repeat a)
+    , t : (TriOp -> a) -> TriOp -> (a -> ProofTree) -> Int -> ProofTree -> Int -> Maybe (Repeat a)
+    , f : (FrameOp -> a) -> FrameOp -> (a -> ProofTree) -> Int -> ProofTree -> Int -> Maybe (Repeat a)
+    , l : (LOp -> a) -> LOp -> (a -> ProofTree) -> Int -> ProofTree -> Int -> Maybe (Repeat a)
     }
 
 
 type LinEq
-    = Solved { a : Int, b : Int }
+    = Solved { a : Float, b : Float }
     | Unsolved Int
 
 
@@ -1521,7 +1521,54 @@ applyN n f b =
 
 inferFunction : ProofTree -> Int -> ProofTree -> Int -> Maybe (Repeat a)
 inferFunction large largeN small smallN =
-    Nothing
+    case (large, small) of
+        (SOp s1, SOp s2) ->
+            inferFunctionS s1 largeN s2 smallN
+
+        (ROp r1, ROp r2) ->
+            inferFunctionR r1 largeN r2 smallN
+
+        (TOp t1, TOp t2) ->
+            inferFunctionT t1 largeN t2 smallN
+
+        (FOp f1, FOp f2) ->
+            inferFunctionF f1 largeN f2 smallN
+
+        (LOp l1, LOp l2) ->
+            inferFunctionL l1 largeN l2 smallN
+
+
+inferFunctionS : SquareOp -> Int -> SquareOp -> Int -> Maybe (Repeat a)
+inferFunctionS s1 largeN s2 smallN =
+    case (s1, s2) of
+        (LCutS l1 s1, LCutS l2 s2) ->
+            inferFunctionL l1 largeN l2 smallN
+                |> ifFailed (inferFunctionS s1 largeN s2 smallN)
+
+        (SplitInnerSquare f1 s1, SplitInnerSquare f2 s2) ->
+            inferFunctionF f1 largeN f2 smallN
+                |> ifFailed (inferFunctionS s1 largeN s2 smallN)
+
+        (SplitOuterFrame f1 s1, SplitOuterFrame f2 s2) ->
+            inferFunctionF f1 largeN f2 smallN
+                |> ifFailed (inferFunctionS s1 largeN s2 smallN)
+
+        (Split4 s11 s12 s13 s14, SplitOuterFrame s21 s22 s23 s24) ->
+            inferFunctionS s11 largeN s21 smallN
+                |> ifFailed (inferFunctionS s12 largeN s22 smallN)
+                |> ifFailed (inferFuncitonS s13 largeN s23 smallN)
+                |> ifFailed (inferFunctionS s14 largeN s24 smallN)
+
+        (RepeatS { ab, repeat, tail }, ss) ->
+            case ab of
+                Solved { a, b } ->
+                    round (a*smallN + b)
+
+                Unsolved n ->
+                    
+
+        _ ->
+            Nothing
 
 
 countOccurances : (a -> a -> Maybe (Diff a)) -> a -> a -> (Repeat a -> a) -> (a -> a) -> a -> (a -> ProofTree) -> Int -> ProofTree -> Int -> Maybe (Repeat a)
@@ -1583,6 +1630,7 @@ findRepeatS trial ss rest largeN small smallN occ =
                     Nothing
 
 
+findRepeatR : (RectOp -> a) -> RectOp -> (a -> ProofTree) -> Int -> ProofTree -> Int -> Occurances a -> Maybe (Repeat a)
 findRepeatR trial re rest largeN small smallN occ =
     case occ.r trial re rest largeN small smallN of
         Just r ->
@@ -1608,6 +1656,7 @@ findRepeatR trial re rest largeN small smallN occ =
                     Nothing
 
 
+findRepeatF : (FrameOp -> a) -> FrameOp -> (a -> ProofTree) -> Int -> ProofTree -> Int -> Occurances a -> Maybe (Repeat a)
 findRepeatF trial fr rest largeN small smallN occ =
     case occ.f trial fr rest largeN small smallN of
         Just f ->
@@ -1625,6 +1674,7 @@ findRepeatF trial fr rest largeN small smallN occ =
                     Nothing
 
 
+findRepeatT : (TriOp -> a) -> TriOp -> (a -> ProofTree) -> Int -> ProofTree -> Int -> Occurances a -> Maybe (Repeat a)
 findRepeatT trial tr rest largeN small smallN occ =
     case occ.t trial tr rest largeN small smallN of
         Just t ->
@@ -1649,6 +1699,7 @@ findRepeatT trial tr rest largeN small smallN occ =
                     Nothing
 
 
+findRepeatL : (LOp -> a) -> LOp -> (a -> ProofTree) -> Int -> ProofTree -> Int -> Occurances a -> Maybe (Repeat a)
 findRepeatL trial ll rest largeN small smallN occ =
     case occ.l trial ll rest largeN small smallN of
         Just l ->
@@ -1681,7 +1732,7 @@ du d f s1 s2 =
         Just (NoDiff) ->
             Just (NoDiff)
 
-        Nothing -> 
+        Nothing ->
             Nothing
 
 
@@ -2061,7 +2112,7 @@ repeatSearchF fr largeN small smallN rest  =
                             repeatSearchR r3 largeN small smallN (rest << \x -> SplitFrame r1Repeat r2Repeat x r4)
 
                         r4Repeat =
-                            repeatSearchR r4 largeN small smallN (rest << \x -> SplitFrame r1Repeat r2Repeat r3Repeat)
+                            repeatSearchR r4 largeN small smallN (rest << SplitFrame r1Repeat r2Repeat r3Repeat)
                     in
                     SplitFrame r1Repeat r2Repeat r3Repeat r4Repeat
 
