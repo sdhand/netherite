@@ -12,9 +12,27 @@ import Maybe.Extra
 import List.Extra
 
 
+type alias Occurances a =
+    { s : (SquareOp -> Maybe (Diff a)) -> SquareOp -> SquareOp -> (a -> ProofTree) -> Int -> ProofTree -> Int -> Maybe (Repeat a)
+    , r : (RectOp -> Maybe (Diff a)) -> RectOp -> RectOp -> (a -> ProofTree) -> Int -> ProofTree -> Int -> Maybe (Repeat a)
+    , t : (TriOp -> Maybe (Diff a)) -> TriOp -> TriOp -> (a -> ProofTree) -> Int -> ProofTree -> Int -> Maybe (Repeat a)
+    , f : (FrameOp -> Maybe (Diff a)) -> FrameOp -> FrameOp -> (a -> ProofTree) -> Int -> ProofTree -> Int -> Maybe (Repeat a)
+    , l : (LOp -> Maybe (Diff a)) -> LOp -> LOp -> (a -> ProofTree) -> Int -> ProofTree -> Int -> Maybe (Repeat a)
+    }
+
+
 type LinEq
     = Solved { a : Int, b : Int }
     | Unsolved Int
+
+
+type Diff a
+    = NoDiff
+    | Diff a
+
+
+type alias Repeat a =
+    { ab : LinEq, repeat : a, tail : a }
 
 
 type SquareOp
@@ -122,6 +140,59 @@ radius =
 distance : Int
 distance =
     20
+
+
+mapDiff f d =
+    case d of
+        Diff p ->
+            Diff (f p)
+
+        NoDiff ->
+            NoDiff
+
+
+unwrapS p =
+    case p of
+        SOp s ->
+            Just s
+
+        _ ->
+            Nothing
+
+
+unwrapR p =
+    case p of
+        ROp r ->
+            Just r
+
+        _ ->
+            Nothing
+
+
+unwrapT p =
+    case p of
+        TOp t ->
+            Just t
+
+        _ ->
+            Nothing
+
+unwrapF p =
+    case p of
+        FOp f ->
+            Just f
+
+        _ ->
+            Nothing
+
+
+unwrapL p =
+    case p of
+        LOp l ->
+            Just l
+
+        _ ->
+            Nothing
 
 
 main : Program () Model Msg
@@ -1441,128 +1512,543 @@ findPossibleRepeatPoints base pt =
                 |> Maybe.map List.reverse
 
 
+applyN n f b =
+    if n == 0 then
+        b
+    else
+        f (applyN (n-1) f b)
 
-findRepeatS : SquareOp -> (SquareOp -> ProofTree)
-findRepeatS ss trial =
-    let
-        recurse () =
+
+countOccurances : (a -> a -> Maybe (Diff a)) -> a -> a -> (Repeat a -> a) -> (a -> a) -> a -> (a -> ProofTree) -> Int -> ProofTree -> Int -> Maybe (Repeat a)
+countOccurances lowerDiffFunc defaultVal next repeat trial ss rest largeN small smallN =
+    if trial next == next then
+        Nothing
+    else
+        let
+            maxApplys n =
+                case lowerDiffFunc (applyN n trial next) ss of
+                    Just (Diff diff) ->
+                        Just (Maybe.withDefault (n, diff) (maxApplys (n+1)))
+
+                    Just NoDiff ->
+                        defaultVal
+
+                    Nothing ->
+                        Nothing
+        in
+        case maxApplys 1 of
+            Just (n, tail) ->
+                inferFunction (rest (repeat { ab = Unsolved n, repeat = trial next, tail = tail })) largeN small smallN
+
+            Nothing ->
+                Nothing
+
+
+findRepeatS : (SquareOp -> a) -> SquareOp -> (a -> ProofTree) -> Int -> ProofTree -> Int -> Occurances a -> Maybe (Repeat a)
+findRepeatS trial ss rest largeN small smallN occ =
+    case occ.s trial ss rest largeN small smallN of
+        Just s ->
+            Just s
+
+        Nothing ->
             case ss of
-                LCutS ->
-                    findRepeatL l (trial << \x -> LcutS x s)
-                        |> ifFailed (findRepeatS s (trial << LCutS l))
-    case trial NextS of
-        SOp s ->
-            let
-                (repeatNum, tail) =
-                    countOccurancesS s ss
-            in
-            if repeatNum > 0 then
-                    case inferFunction (rest (SOp (RepeatS { ab = Unsolved (repeatNum + 1), repeat = s, tail = tail }))) of
-                        Just sol ->
-                            if sol.a == 0 then
-                                recurse ()
-
-                            else
-                                Just (SOp (RepeatS { ab = Solved sol, repeat = s, tail = tail }))
-
-                        _ ->
-                            Nothing
-            else
-                recurse ()
-
-        _ ->
-            recurse ()
-
-
-findRepeatS : SquareOp -> (SquareOp -> ProofTree) -> (SquareOp -> ProofTree) -> ProofTree -> Maybe ProofTree
-findRepeatS ss trial rest small =
-    case ss of
-        LCutS l s ->
-            let
-                searchD () =
-                    findRepeatL l (trial << \x -> LCutS x s) (rest << \x -> LCutS x s) small
-                        |> ifFailed (findRepeatS s (trial << LCutS l) (rest << LCutS l) small)
-            in
-            case trial (LCutS NextL s) of
-                LOp lRepeat ->
-                    let
-                        (repeatNum, tail) =
-                            countOccurancesL lRepeat l
-                    in
-                    if repeatNum > 0 then
-                        case inferFunction (rest (RepeatL { ab = Unsolved (repeatNum + 1), repeat = lRepeat, tail = tail })) small of
-                            Just sol ->
-                                if sol.a == 0 then
-                                    searchD ()
-
-                                else
-                                    Just (LOp (RepeatL { ab = LinEq sol, repeat = lRepeat, tail = tail }))
-
-                SOp sRepeat ->
-                    let
-                        (repeatNum, tail) =
-                            countOccurancesS (\x -> LCutS x s)  s
-                    in
-                    if repeatNum > 0 then
-                        case inferFunction (rest (RepeatS { ab = Unsolved (repeatNum + 1), repeat = sRepeat, tail = tail })) small of
-                            Just sol ->
-                                if sol.a == 0 then
-                                    searchD ()
-
-                                else
-                                    Just (SOp (RepeatS { ab = LinEq sol, repeat = sRepeat, tail = tail }))
+                LCutS l s ->
+                    findRepeatL (trial << \x -> LCutS x s) l rest largeN small smallN occ
+                        |> ifFailed (findRepeatS (trial << LCutS l) s rest largeN small smallN occ)
 
                 _ ->
-                    searchD ()
+                    Nothing
 
 
+aN : (a -> Maybe (Diff b)) -> a -> a -> (b -> ProofTree) -> Int -> ProofTree -> Int -> Maybe (Repeat b)
+aN _ _ _ _ _ _ _ =
+    Nothing
 
-repeatSearchS : SquareOp -> (SquareOp -> ProofTree) -> ProofTree
-repeatSearchS ss rest =
-    case findRepeatS ss SOp rest small of
-        Just (SOp (RepeatS repeat)) ->
-            { repeat | tail = repeatSearchS repeat.tail (rest << \x -> { repeat | tail = x }) }
+
+findLowerDiffS ss1 ss2 =
+    case (ss1, ss2) of
+        (LCutS l1 s1, LCutS l2 s2) ->
+            case (findLowerDiffL l1 l2, findLowerDiffS s1 s2) of
+                (Just (Diff d), Just NoDiff) ->
+                    Just (Diff d)
+
+                (Just NoDiff, Just (Diff d)) ->
+                    Just (Diff d)
+
+                (Just NoDiff, Just NoDiff) ->
+                    Just NoDiff
+
+                _ ->
+                    Nothing
+
+        (SplitInnerSquare f1 s1, SplitInnerSquare f2 s2) ->
+            case (findLowerDiffF f1 f2, findLowerDiffS s1 s2) of
+                (Just (Diff d), Just NoDiff) ->
+                    Just (Diff d)
+
+                (Just NoDiff, Just (Diff d)) ->
+                    Just (Diff d)
+
+                (Just NoDiff, Just NoDiff) ->
+                    Just NoDiff
+
+                _ ->
+                    Nothing
+
+        (SplitOuterFrame f1 s1, SplitOuterFrame f2 s2) ->
+            case (findLowerDiffF f1 f2, findLowerDiffS s1 s2) of
+                (Just (Diff d), Just NoDiff) ->
+                    Just (Diff d)
+
+                (Just NoDiff, Just (Diff d)) ->
+                    Just (Diff d)
+
+                (Just NoDiff, Just NoDiff) ->
+                    Just NoDiff
+
+                _ ->
+                    Nothing
+
+        (Split4 s11 s12 s13 s14, Split4 s21 s22 s23 s24) ->
+            case (findLowerDiffS s11 s21, (findLowerDiffS s12 s22, findLowerDiffS s13 s23, findLowerDiffS s14 s24)) of
+                (Just (Diff d), (Just NoDiff, Just NoDiff, Just NoDiff)) ->
+                    Just (Diff d)
+
+                (Just NoDiff, (Just (Diff d), Just NoDiff, Just NoDiff)) ->
+                    Just (Diff d)
+
+                (Just NoDiff, (Just NoDiff, Just (Diff d), Just NoDiff)) ->
+                    Just (Diff d)
+
+                (Just NoDiff, (Just NoDiff, Just NoDiff, Just (Diff d))) ->
+                    Just (Diff d)
+
+                (Just NoDiff, Just NoDiff) ->
+                    Just NoDiff
+
+                _ ->
+                    Nothing
+
+        (SplitDiaS t11 t12, SplitDiaS t21 t22) ->
+            case (findLowerDiffT t11 t21, findLowerDiffT t12 t22) of
+                (Just (Diff d), Just NoDiff) ->
+                    Just (Diff d)
+
+                (Just NoDiff, Just (Diff d)) ->
+                    Just (Diff d)
+
+                (Just NoDiff, Just NoDiff) ->
+                    Just NoDiff
+
+                _ ->
+                    Nothing
+
+        (Square _, Square _) ->
+            Just NoDiff
+
+
+        (NextS, s) ->
+            Just (Diff (SOp s))
 
         _ ->
-            LCutS l s ->
-                repeatSearchL l (rest << \x -> LCutS x s)
-                    |> (rest << LCutS) >> repeatSearchS s
+            Nothing
+
+
+findLowerDiffR re1 re2 =
+    case (re1, re2) of
+        (SplitSquare s1 r1, SplitSquare s2 r2) ->
+            case (findLowerDiffS s1 s2, findLowerDiffR r1 r2) of
+                (Just (Diff d), Just NoDiff) ->
+                    Just (Diff d)
+
+                (Just NoDiff, Just (Diff d)) ->
+                    Just (Diff d)
+
+                (Just NoDiff, Just NoDiff) ->
+                    Just NoDiff
+
+                _ ->
+                    Nothing
+
+        (SplitDiaR t11 t12, SplitDiaR t21 t22) ->
+            case (findLowerDiffT t11 t21, findLowerDiffT t12 t22) of
+                (Just (Diff d), Just NoDiff) ->
+                    Just (Diff d)
+
+                (Just NoDiff, Just (Diff d)) ->
+                    Just (Diff d)
+
+                (Just NoDiff, Just NoDiff) ->
+                    Just NoDiff
+
+                _ ->
+                    Nothing
+
+        (ToSquare s1, ToSquare s2) ->
+            findLowerDiffS s1 s2
+
+        (Rotate r1, Rotate r2) ->
+            findLowerDiffR r1 r2
+
+        (Rect _ _, Rect _ _) ->
+            Just NoDiff
+
+        (NextR, r) ->
+            Just (Diff (ROp r))
+
+        _ ->
+            Nothing
+
+
+findLowerDiffF fr1 fr2 =
+    case (fr1, fr2) of
+        (SplitFrame r11 r12 r13 r14, SplitFrame r21 r22 r23 r24) ->
+            case (findLowerDiffR r11 r21, (findLowerDiffR r12 r22, findLowerDiffR r13 r23, findLowerDiffR r14 r24)) of
+                (Just (Diff d), (Just NoDiff, Just NoDiff, Just NoDiff)) ->
+                    Just (Diff d)
+
+                (Just NoDiff, (Just (Diff d), Just NoDiff, Just NoDiff)) ->
+                    Just (Diff d)
+
+                (Just NoDiff, (Just NoDiff, Just (Diff d), Just NoDiff)) ->
+                    Just (Diff d)
+
+                (Just NoDiff, (Just NoDiff, Just NoDiff, Just (Diff d))) ->
+                    Just (Diff d)
+
+                (Just NoDiff, (Just NoDiff, Just NoDiff, Just NoDiff)) ->
+                    Just NoDiff
+
+                _ ->
+                    Nothing
+
+        (Frame _ _, Frame _ _) ->
+            Just NoDiff
+
+        (NextF, f) ->
+            Just (Diff (FOp f))
+
+        _ ->
+            Nothing
+
+
+findLowerDiffT tr1 tr2 =
+    case (tr1, tr2) of
+        (SplitTST t11 s1 t12, SplitTST t21 s2 t22) ->
+            case (findLowerDiffT t11 t21, findLowerDiffS s1 s2, findLowerDiffT t12 t22) of
+                (Just (Diff d), Just NoDiff, Just NoDiff) ->
+                    Just (Diff d)
+
+                (Just NoDiff, Just (Diff d), Just NoDiff) ->
+                    Just (Diff d)
+
+                (Just NoDiff, Just NoDiff, Just (Diff d)) ->
+                    Just (Diff d)
+
+                (Just NoDiff, Just NoDiff, Just NoDiff) ->
+                    Just NoDiff
+
+                _ ->
+                    Nothing
+
+        (LCutT l1 t1, LCutT l2 t2) ->
+            case (findLowerDiffL l1 l2, findLowerDiffT t1 t2) of
+                (Just (Diff d), Just NoDiff) ->
+                    Just (Diff d)
+
+                (Just NoDiff, Just (Diff d)) ->
+                    Just (Diff d)
+
+                (Just NoDiff, Just NoDiff) ->
+                    Just NoDiff
+
+                _ ->
+                    Nothing
+
+        (SplitSide r1 t1, SplitSide r2 t2) ->
+            case (findLowerDiffR r1 r2, findLowerDiffT) of
+                (Just (Diff d), Just NoDiff) ->
+                    Just (Diff d)
+
+                (Just NoDiff, Just (Diff d)) ->
+                    Just (Diff d)
+
+                (Just NoDiff, Just NoDiff) ->
+                    Just NoDiff
+
+                _ ->
+                    Nothing
+
+        (Tri _, Tri _) ->
+            Just NoDiff
+
+        (NextT, t) ->
+            Just (Diff (TOp t))
+
+        _ ->
+            Nothing
+
+
+findLowerDiffL ll1 ll2 =
+    case (ll1, ll2) of
+        (SplitEnds r1 l1, SplitEnds r2 l2) ->
+            case (findLowerDiffR r1 r2, findLowerDiffL l1 l2) of
+                (Just (Diff d), Just NoDiff) ->
+                    Just (Diff d)
+
+                (Just NoDiff, Just (Diff d)) ->
+                    Just (Diff d)
+
+                (Just NoDiff, Just NoDiff) ->
+                    Just NoDiff
+
+                _ ->
+                    Nothing
+
+        (L _, L _) ->
+            NoDiff
+
+        (NextL, l) ->
+            Just (Diff (LOp l))
+
+        _ ->
+            Nothing
+
+
+repeatSearchS : SquareOp -> Int -> ProofTree -> Int -> (SquareOp -> ProofTree) -> SquareOp
+repeatSearchS ss largeN small smallN rest =
+    case findRepeatS (\x -> x) ss rest largeN small smallN { s = countOccurances (findLowerDiffS >> Maybe.map (mapDiff unwrapS)) (Square 0) NextS RepeatS, r = aN, t = aN, f = aN, l = aN } of
+        Just repeat ->
+            RepeatS { repeat | tail = repeatSearchS repeat.tail largeN small smallN (rest << \x -> RepeatS { repeat | tail = x }) }
+
+        Nothing ->
+            case ss of
+                LCutS l s ->
+                    let
+                        lRepeat =
+                            repeatSearchL l largeN small smallN (rest << \x -> LCutS x s)
+
+                        sRepeat =
+                            repeatSearchS s largeN small smallN (rest << LCutS lRepeat)
+                    in
+                    LCutS lRepeat sRepeat
+
+                SplitInnerSquare f s ->
+                    let
+                        fRepeat =
+                            repeatSearchF f largeN small smallN (rest << \x -> SplitInnerSquare x s)
+
+                        sRepeat =
+                            repeatSearchS s largeN small smallN (rest << SplitInnerSquare fRepeat)
+                    in
+                    SplitInnerSquare fRepeat sRepeat
+
+                SplitOuterFrame f s ->
+                    let
+                        fRepeat =
+                            repeatSearchF f largeN small smallN (rest << \x -> SplitOuterFrame x s)
+
+                        sRepeat =
+                            repeatSearchS s largeN small smallN (rest << SplitOuterFrame fRepeat)
+                    in
+                    SplitOuterFrame fRepeat sRepeat
+
+                Split4 s1 s2 s3 s4 ->
+                    let
+                        s1Repeat =
+                            repeatSearchS s1 largeN small smallN (rest << \x -> Split4 x s2 s3 s4)
+
+                        s2Repeat =
+                            repeatSearchS s2 largeN small smallN (rest << \x -> Split4 s1Repeat x s3 s4)
+
+                        s3Repeat =
+                            repeatSearchS s3 largeN small smallN (rest << \x -> Split4 s1Repeat s2Repeat x s4)
+
+                        s4Repeat =
+                            repeatSearchS s4 largeN small smallN (rest << Split4 s1Repeat s2Repeat s3Repeat)
+                    in
+                    Split4 s1Repeat s2Repeat s3Repeat s4Repeat
+
+                SplitDiaS t1 t2 ->
+                    let
+                        t1Repeat =
+                            repeatSearchT t1 largeN small smallN (rest << \x -> SplitDiaS x t2)
+
+                        t2Repeat =
+                            repeatSearchT t2 largeN small smallN (rest << SplitDiaS t1Repeat)
+                    in
+                    SplitDiaS t1Repeat t2Repeat
+
+                x ->
+                    x
+
+
+repeatSearchR : RectOp -> Int -> ProofTree -> Int -> (RectOp -> ProofTree) -> RectOp
+repeatSearchR re largeN small smallN rest =
+    case findRepeatR (\x -> x) re rest largeN small smallN { s = aN, r = countOccurances (findLowerDiffR >> Maybe.map (mapDiff unwrapR)) (Rect 0 0) NextR RepeatR, t = aN, f = aN, l = aN } of
+        Just repeat ->
+            RepeatR { repeat | tail = repeatSearchR repeat.tail largeN small smallN (rest << \x -> RepeatR { repeat | tail = x }) }
+
+        Nothing ->
+            case re of
+                SplitSquare s r ->
+                    let
+                        sRepeat =
+                            repeatSearchS s largeN small smallN (rest << \x -> SplitSquare x s)
+
+                        rRepeat =
+                            repeatSearchR r largeN small smallN (rest << SplitSquare sRepeat)
+                    in
+                    SplitSquare sRepeat rRepeat
+
+                SplitDiaR t1 t2 ->
+                    let
+                        t1Repeat =
+                            repeatSearchT t1 largeN small smallN (rest << \x -> SplitDiaR x t2)
+
+                        t2Repeat =
+                            repeatSearchT t2 largeN small smallN (rest << SplitDiaR t1Repeat)
+                    in
+                    SplitDiaR t1Repeat t2Repeat
+
+                ToSquare s ->
+                    ToSquare (repeatSearchS s largeN small smallN (rest << ToSquare))
+
+                Rotate r ->
+                    Rotate (repeatSearchR r largeN small smallN (rest << Rotate))
+
+                x ->
+                    x
+
+
+repeatSearchF : FrameOp -> Int -> ProofTree -> Int -> (FrameOp -> ProofTree) -> FrameOp
+repeatSearchF fr largeN small smallN rest  =
+    case findRepeatF (\x -> x) fr rest largeN small smallN { s = aN, r = aN, t = aN, f = countOccurances (findLowerDiffF >> Maybe.map (mapDiff unwrapF)) (Frame 0 0) NextF RepeatF, l = aN } of
+        Just repeat ->
+            RepeatF { repeat | tail = repeatSearchF repeat.tail largeN small smallN (rest << \x -> RepeatF { repeat | tail = x }) }
+
+        Nothing ->
+            case fr of
+                SplitFrame r1 r2 r3 r4 ->
+                    let
+                        r1Repeat =
+                            repeatSearchR r1 largeN small smallN (rest << \x -> SplitFrame x r2 r3 r4)
+
+                        r2Repeat =
+                            repeatSearchR r2 largeN small smallN (rest << \x -> SplitFrame r1Repeat x r3 r4)
+
+                        r3Repeat =
+                            repeatSearchR r3 largeN small smallN (rest << \x -> SplitFrame r1Repeat r2Repeat x r4)
+
+                        r4Repeat =
+                            repeatSearchR r4 largeN small smallN (rest << \x -> SplitFrame r1Repeat r2Repeat r3Repeat)
+                    in
+                    SplitFrame r1Repeat r2Repeat r3Repeat r4Repeat
+
+                x ->
+                    x
+
+
+repeatSearchT : TriOp -> Int -> ProofTree -> Int -> (TriOp -> ProofTree) -> TriOp
+repeatSearchT tr largeN small smallN rest =
+    case findRepeatT (\x -> x) tr rest largeN small smallN { s = aN, r = aN, t = countOccurances (findLowerDiffT >> Maybe.map (mapDiff unwrapT)) (Tri 0) NextT RepeatT, f = aN, l = aN } of
+        Just repeat ->
+            RepeatT { repeat | tail = repeatSearchT repeat.tail largeN small smallN (rest << \x -> RepeatT { repeat | tail = x }) }
+
+        Nothing ->
+            case tr of
+                SplitTST t1 s t2 ->
+                    let
+                        t1Repeat =
+                            repeatSearchT t1 largeN small smallN (rest << \x -> SplitTST x s t2)
+
+                        sRepeat =
+                            repeatSearchS s largeN small smallN (rest << \x -> SplitTST t1Repeat x t2)
+
+                        t2Repeat =
+                            repeatSearchT t2 largeN small smallN (rest << SplitTST t1Repeat sRepeat)
+                    in
+                    SplitTST t1Repeat sRepeat t2Repeat
+
+                LCutT l t ->
+                    let
+                        lRepeat =
+                            repeatSearchL l largeN small smallN (rest << \x -> LCutT x t)
+
+                        tRepeat =
+                            repeatSearchT t largeN small smallN (rest << LCutT lRepeat)
+                    in
+                    LCutT lRepeat tRepeat
+
+                SplitSide r t ->
+                    let
+                        rRepeat =
+                            repeatSearchR r largeN small smallN (rest << \x -> SplitSide x t)
+
+                        tRepeat =
+                            repeatSearchT t largeN small smallN (rest << SplitSide rRepeat)
+                    in
+                    SplitSide rRepeat tRepeat
+
+                x ->
+                    x
+
+
+repeatSearchL : LOp -> Int -> ProofTree -> Int -> (LOp -> ProofTree) -> LOp
+repeatSearchL ll largeN small smallN rest =
+    case findRepeatL (\x -> x) ll rest largeN small smallN { s = aN, r = aN, t = aN, f = aN, l = countOccurances (findLowerDiffL >> Maybe.map (mapDiff unwrapL)) (L 0) NextL RepeatL } of
+        Just repeat ->
+            RepeatL { repeat | tail = repeatSearchL repeat.tail largeN small smallN (rest << \x -> RepeatL { repeat | tail = x}) }
+
+        Nothing ->
+            case ll of
+                SplitEnds r l ->
+                    let
+                        rRepeat =
+                            repeatSearchR r largeN small smallN (rest << \x -> SplitEnds x l)
+
+                        lRepeat =
+                            repeatSearchL l largeN small smallN (rest << SplitEnds rRepeat)
+                    in
+                    SplitEnds rRepeat lRepeat
+
+                x ->
+                    x
 
 
 repeatSearch : Int -> ProofTree -> Int -> ProofTree -> ProofTree
 repeatSearch smallN small largeN large =
-    case pt of
+    case large of
         SOp s ->
-            repeatSearchS s SOp
+            SOp (repeatSearchS s largeN small smallN SOp)
 
-        ROp r ->
-            repeatSearchR r ROp
+        ROp r->
+            ROp (repeatSearchR r largeN small smallN ROp)
 
         FOp f ->
-            repeatSearchF f FOp
+            FOp (repeatSearchF f largeN small smallN FOp)
 
         TOp t ->
-            repeatSearchT t TOp
+            TOp (repeatSearchT t largeN small smallN TOp)
 
         LOp l ->
-            repeatSearchL l LOp
+            LOp (repeatSearchL l largeN small smallN LOp)
+
+
+findBase : ProofTree -> Int -> ProofTree -> Maybe ProofTree
+findBase _ _ _ =
+    Nothing
 
 
 tryStepCase : (Int, Int) -> (ProofTree, ProofTree) -> Maybe SchematicProof
 tryStepCase (stepN, baseN) (step, base) =
     let
         generalStep =
-            findRepeats step
-                |> inferFunctions (stepN, baseN) base
+            repeatSearch baseN base stepN step
     in
-    case generalStep of
-        Just gStep ->
-            case findLowerDifference gStep of
-                Nothing ->
-                    Nothing
-
-                Just diff ->
-                    { step = gStep, base = diff }
+    case findBase generalStep baseN base of
+        Just diff ->
+            Just { step = generalStep, base = diff }
 
         Nothing ->
             Nothing
