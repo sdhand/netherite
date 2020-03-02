@@ -132,6 +132,7 @@ type Stage
         , p1 : String
         , p2 : String
         }
+        (List { n : String, shape : String, p1 : String, p2 : String })
     | DoneI
         { n : String
         , shape : String
@@ -147,13 +148,15 @@ type alias Model =
     }
 
 type Msg
-    = SetN String
-    | SetShape String
-    | SetP1 String
-    | SetP2 String
+    = SetN (Maybe Int) String
+    | SetShape (Maybe Int) String
+    | SetP1 (Maybe Int) String
+    | SetP2 (Maybe Int) String
     | Next
     | SetOp String
     | UpdateProof ProofTree
+    | AddShape
+    | Delete Int
 
 
 radius : Int
@@ -239,6 +242,7 @@ init _ =
                 , p1 = ""
                 , p2 = ""
                 }
+                []
         , proofs = []
         }
     , Cmd.none
@@ -2694,26 +2698,56 @@ infer (n1, p1) (n2, p2) =
             Nothing
 
 
+makeShapeInputs : Int -> { n : String, shape : String, p1 : String, p2 : String } -> List (Html Msg)
+makeShapeInputs i { n, shape, p1, p2 } =
+    Html.text ","
+    ::input [ type_ "number", Html.Attributes.value n ] []
+    ::Html.text "✕"
+    ::select
+        [ onInput (SetShape (Just i)) ]
+        [ option [ Html.Attributes.value "square", Html.Attributes.selected True ] [ Html.text "Square" ]
+        , option [ Html.Attributes.value "rect" ] [ Html.text "Rectangle" ]
+        , option [ Html.Attributes.value "tri" ] [ Html.text "Triangle" ]
+        , option [ Html.Attributes.value "l" ] [ Html.text "L" ]
+        , option [ Html.Attributes.value "frame" ] [ Html.text "Frame" ]
+        ]
+    ::input [ type_ "number", Html.Attributes.value p1, onInput (SetP1 (Just i)) ] []
+    :: (if shape == "rect" || shape == "frame" then [ input [ type_ "number", Html.Attributes.value p2, onInput (SetP2 (Just i)) ] [] ] else [])
+    ++ [ button [ onClick (Delete i) ] [ Html.text "Delete" ] ]
+
+
 view : Model -> Document Msg
 view model =
     { title = "Netherite"
     , body =
         case model.stage of
-            Initialising i ->
-                input
-                    [ type_ "number", Html.Attributes.value i.n, onInput SetN ]
+            Initialising i shapes ->
+                label
                     []
-                ::select
-                    [ onInput SetShape ]
-                    [ option [ Html.Attributes.value "square", Html.Attributes.selected True ] [ Html.text "Square" ]
-                    , option [ Html.Attributes.value "rect" ] [ Html.text "Rectangle" ]
-                    , option [ Html.Attributes.value "tri" ] [ Html.text "Triangle" ]
-                    , option [ Html.Attributes.value "l" ] [ Html.text "L" ]
-                    , option [ Html.Attributes.value "frame" ] [ Html.text "Frame" ]
+                    [ Html.text "n:"
+                    , input
+                        [ type_ "number", Html.Attributes.value i.n, onInput (SetN Nothing) ]
+                        []
                     ]
-                :: input [ type_ "number", Html.Attributes.value i.p1, onInput SetP1 ] []
-                :: (if i.shape == "rect" || i.shape == "frame" then [ input [ type_ "number", Html.Attributes.value i.p2, onInput SetP2 ] [] ] else [])
-                ++ [ button [ onClick Next ] [ Html.text "Prove..." ] ]
+                :: br [] []
+                :: label
+                    []
+                    ([ Html.text "Shape:"
+                    , select
+                        [ onInput (SetShape Nothing) ]
+                        [ option [ Html.Attributes.value "square", Html.Attributes.selected True ] [ Html.text "Square" ]
+                        , option [ Html.Attributes.value "rect" ] [ Html.text "Rectangle" ]
+                        , option [ Html.Attributes.value "tri" ] [ Html.text "Triangle" ]
+                        , option [ Html.Attributes.value "l" ] [ Html.text "L" ]
+                        , option [ Html.Attributes.value "frame" ] [ Html.text "Frame" ]
+                        ]
+                    , input [ type_ "number", Html.Attributes.value i.p1, onInput (SetP1 Nothing) ] []
+                    ]
+                    ++ (if i.shape == "rect" || i.shape == "frame" then [ input [ type_ "number", Html.Attributes.value i.p2, onInput (SetP2 Nothing) ] [] ] else []))
+                :: br [] []
+                :: Html.text "Goal:"
+                :: Maybe.withDefault [] (List.tail (List.concat (List.indexedMap makeShapeInputs shapes)))
+                ++ [ button [ onClick AddShape ] [ Html.text "+" ], br [] [], button [ onClick Next ] [ Html.text "Prove..." ] ]
 
             Proving p ->
                 case List.head model.proofs of
@@ -2742,18 +2776,18 @@ view model =
 
             DoneI i ->
                 input
-                    [ type_ "number", Html.Attributes.value i.n, onInput SetN ]
+                    [ type_ "number", Html.Attributes.value i.n, onInput (SetN Nothing) ]
                     []
                 ::select
-                    [ onInput SetShape ]
+                    [ onInput (SetShape Nothing) ]
                     [ option [ Html.Attributes.value "square", Html.Attributes.selected True ] [ Html.text "Square" ]
                     , option [ Html.Attributes.value "rect" ] [ Html.text "Rectangle" ]
                     , option [ Html.Attributes.value "tri" ] [ Html.text "Triangle" ]
                     , option [ Html.Attributes.value "l" ] [ Html.text "L" ]
                     , option [ Html.Attributes.value "frame" ] [ Html.text "Frame" ]
                     ]
-                :: input [ type_ "number", Html.Attributes.value i.p1, onInput SetP1 ] []
-                :: (if i.shape == "rect" || i.shape == "frame" then [ input [ type_ "number", Html.Attributes.value i.p2, onInput SetP2 ] [] ] else [])
+                :: input [ type_ "number", Html.Attributes.value i.p1, onInput (SetP1 Nothing) ] []
+                :: (if i.shape == "rect" || i.shape == "frame" then [ input [ type_ "number", Html.Attributes.value i.p2, onInput (SetP2 Nothing) ] [] ] else [])
                 ++ [ button [ onClick Next ] [ Html.text "Show proof" ] ]
 
             Done (Just pt) ->
@@ -2940,19 +2974,31 @@ evaluateProof n start ({ step, base } as schematic) =
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case model.stage of
-        Initialising i ->
+        Initialising i shapes ->
             case msg of
-                SetN n ->
-                    ({ model | stage = Initialising { i | n = n } }, Cmd.none)
+                SetN Nothing n ->
+                    ({ model | stage = Initialising { i | n = n } shapes }, Cmd.none)
 
-                SetShape shape ->
-                    ({ model | stage = Initialising { i | shape = shape } }, Cmd.none)
+                SetN (Just j) n ->
+                    ({ model | stage = Initialising i (List.Extra.updateAt j (\x -> { x | n = n }) shapes) }, Cmd.none)
 
-                SetP1 p1 ->
-                    ({ model | stage = Initialising { i | p1 = p1 } }, Cmd.none)
+                SetShape Nothing shape ->
+                    ({ model | stage = Initialising { i | shape = shape } shapes }, Cmd.none)
 
-                SetP2 p2 ->
-                    ({ model | stage = Initialising { i | p2 = p2 } }, Cmd.none)
+                SetShape (Just j) shape ->
+                    ({ model | stage = Initialising i (List.Extra.updateAt j (\x -> { x | shape = shape }) shapes) }, Cmd.none)
+
+                SetP1 Nothing p1 ->
+                    ({ model | stage = Initialising { i | p1 = p1 } shapes }, Cmd.none)
+
+                SetP1 (Just j) p1 ->
+                    ({ model | stage = Initialising i (List.Extra.updateAt j (\x -> { x | p1 = p1 }) shapes) }, Cmd.none)
+
+                SetP2 Nothing p2 ->
+                    ({ model | stage = Initialising { i | p2 = p2 } shapes }, Cmd.none)
+
+                SetP2 (Just j) p2 ->
+                    ({ model | stage = Initialising i (List.Extra.updateAt j (\x -> { x | p2 = p2 }) shapes) }, Cmd.none)
 
                 Next ->
                     case (String.toInt i.n, (i.shape, String.toInt i.p1, String.toInt i.p2)) of
@@ -2973,6 +3019,13 @@ update msg model =
 
                         _ ->
                             (model, Cmd.none)
+
+                AddShape ->
+                    ( { model | stage = Initialising i <| shapes++[ { n = "", shape = "square", p1 = "", p2 = "" } ] }, Cmd.none )
+
+                Delete j ->
+                    ( { model | stage = Initialising i (List.Extra.removeAt j shapes) }, Cmd.none )
+
                 _ ->
                     (model, Cmd.none)
 
@@ -2994,23 +3047,23 @@ update msg model =
                         --( {model | stage = Done <| Debug.log "" (Maybe.map2 infer (List.Extra.getAt 0 model.proofs) (List.Extra.getAt 1 model.proofs) |> Maybe.withDefault Nothing) }, Cmd.none )
                         ( { model | stage = DoneI { n = "", shape = "square", p1 = "", p2 = "" } }, Cmd.none )
                     else
-                        ( { model | stage = Initialising { n = "", shape = "square", p1 = "", p2 = "" } }, Cmd.none )
+                        ( { model | stage = Initialising { n = "", shape = "square", p1 = "", p2 = "" } [] }, Cmd.none )
 
                 _ ->
                     ( model, Cmd.none )
 
         DoneI i ->
             case msg of
-                SetN n ->
+                SetN Nothing n ->
                     ({ model | stage = DoneI { i | n = n } }, Cmd.none)
 
-                SetShape shape ->
+                SetShape Nothing shape ->
                     ({ model | stage = DoneI { i | shape = shape } }, Cmd.none)
 
-                SetP1 p1 ->
+                SetP1 Nothing p1 ->
                     ({ model | stage = DoneI { i | p1 = p1 } }, Cmd.none)
 
-                SetP2 p2 ->
+                SetP2 Nothing p2 ->
                     ({ model | stage = DoneI { i | p2 = p2 } }, Cmd.none)
 
                 Next ->
