@@ -35,6 +35,24 @@ type alias Repeat a =
     { ab : LinEq, repeat : a, tail : a }
 
 
+type alias RepeatConv a =
+    { s : Repeat SquareOp -> Maybe (Repeat a)
+    , r : Repeat RectOp -> Maybe (Repeat a)
+    , t : Repeat TriOp -> Maybe (Repeat a)
+    , f : Repeat FrameOp -> Maybe (Repeat a)
+    , l : Repeat LOp -> Maybe (Repeat a)
+    }
+
+
+type alias ConvFunc a =
+    { s : (SquareOp -> a) -> Maybe (a -> a)
+    , r : (RectOp -> a) -> Maybe (a -> a)
+    , t : (TriOp -> a) -> Maybe (a -> a)
+    , f : (FrameOp -> a) -> Maybe (a -> a)
+    , l : (LOp -> a) -> Maybe (a -> a)
+    }
+
+
 type SquareOp
     = LCutS LOp SquareOp
     | SplitInnerSquare FrameOp SquareOp
@@ -99,11 +117,11 @@ type alias SchematicProof =
 
 
 type Repeater
-    = SRepeater { a : Int, b : Int, repeat : SquareOp, tail : SquareOp, i : Int }
-    | RRepeater { a : Int, b : Int, repeat : RectOp, tail : RectOp, i : Int }
-    | FRepeater { a : Int, b : Int, repeat : FrameOp, tail : FrameOp, i : Int }
-    | TRepeater { a : Int, b : Int, repeat : TriOp, tail : TriOp, i : Int }
-    | LRepeater { a : Int, b : Int, repeat : LOp, tail : LOp, i : Int }
+    = SRepeater { a : Float, b : Float, repeat : SquareOp, tail : SquareOp, i : Int }
+    | RRepeater { a : Float, b : Float, repeat : RectOp, tail : RectOp, i : Int }
+    | FRepeater { a : Float, b : Float, repeat : FrameOp, tail : FrameOp, i : Int }
+    | TRepeater { a : Float, b : Float, repeat : TriOp, tail : TriOp, i : Int }
+    | LRepeater { a : Float, b : Float, repeat : LOp, tail : LOp, i : Int }
 
 
 type Stage
@@ -114,7 +132,13 @@ type Stage
         , p1 : String
         , p2 : String
         }
-    | Done
+    | DoneI
+        { n : String
+        , shape : String
+        , p1 : String
+        , p2 : String
+        }
+    | Done (Maybe ProofTree)
 
 
 type alias Model =
@@ -848,7 +872,7 @@ buildRepeatS repeater n sq =
         RepeatS { ab, repeat, tail } ->
             case ab of
                 Solved {a, b} ->
-                    buildRepeatS (Just (SRepeater { a = a, b = b, repeat = repeat, tail = tail, i = a*n+b })) n repeat
+                    buildRepeatS (Just (SRepeater { a = a, b = b, repeat = repeat, tail = tail, i = round (a*toFloat(n)+b) })) n repeat
 
                 Unsolved _ ->
                     Just sq
@@ -856,10 +880,14 @@ buildRepeatS repeater n sq =
         NextS ->
             case repeater of
                 Just (SRepeater { a, b, repeat, tail, i }) ->
-                    if i == 0 then
-                        buildRepeatS Nothing n tail
+                    if i <= 0 then
+                        Nothing
                     else
-                        buildRepeatS (Just (SRepeater { a = a, b = b, repeat = repeat, tail = tail, i = i-1 })) n repeat
+                        if i == 1 then
+                            buildRepeatS Nothing n tail
+
+                        else
+                            buildRepeatS (Just (SRepeater { a = a, b = b, repeat = repeat, tail = tail, i = i-1 })) n repeat
 
                 _ ->
                     Nothing
@@ -892,7 +920,7 @@ buildRepeatR repeater n re =
         RepeatR { ab, repeat, tail } ->
             case ab of
                 Solved {a, b} ->
-                    buildRepeatR (Just (RRepeater { a = a, b = b, repeat = repeat, tail = tail, i = a*n+b })) n repeat
+                    buildRepeatR (Just (RRepeater { a = a, b = b, repeat = repeat, tail = tail, i = round (a*toFloat(n)+b) })) n repeat
 
                 Unsolved _ ->
                     Just re
@@ -900,10 +928,15 @@ buildRepeatR repeater n re =
         NextR ->
             case repeater of
                 Just (RRepeater { a, b, repeat, tail, i }) ->
-                    if i == 0 then
-                        buildRepeatR Nothing n tail
-                    else
-                        buildRepeatR (Just (RRepeater { a = a, b = b, repeat = repeat, tail = tail, i = i-1 })) n repeat
+                        if i <= 0 then
+                            Nothing
+
+                        else
+                            if i == 1 then
+                                buildRepeatR Nothing n tail
+
+                            else
+                                buildRepeatR (Just (RRepeater { a = a, b = b, repeat = repeat, tail = tail, i = i-1 })) n repeat
 
                 _ ->
                     Nothing
@@ -933,7 +966,7 @@ buildRepeatT repeater n tr =
         RepeatT { ab, repeat, tail } ->
             case ab of
                 Solved {a, b} ->
-                    buildRepeatT (Just (TRepeater { a = a, b = b, repeat = repeat, tail = tail, i = a*n+b })) n repeat
+                    buildRepeatT (Just (TRepeater { a = a, b = b, repeat = repeat, tail = tail, i = round (a*toFloat(n)+b) })) n repeat
 
                 Unsolved _ ->
                     Just tr
@@ -941,10 +974,13 @@ buildRepeatT repeater n tr =
         NextT ->
             case repeater of
                 Just (TRepeater { a, b, repeat, tail, i }) ->
-                    if i == 0 then
-                        buildRepeatT Nothing n tail
+                    if i <= 0 then
+                        Nothing
                     else
-                        buildRepeatT (Just (TRepeater { a = a, b = b, repeat = repeat, tail = tail, i = i-1 })) n repeat
+                        if i == 1 then
+                            buildRepeatT Nothing n tail
+                        else
+                            buildRepeatT (Just (TRepeater { a = a, b = b, repeat = repeat, tail = tail, i = i-1 })) n repeat
 
                 _ ->
                     Nothing
@@ -971,7 +1007,7 @@ buildRepeatF repeater n fr =
         RepeatF { ab, repeat, tail } ->
             case ab of
                 Solved {a, b} ->
-                    buildRepeatF (Just (FRepeater { a = a, b = b, repeat = repeat, tail = tail, i = a*n+b })) n repeat
+                    buildRepeatF (Just (FRepeater { a = a, b = b, repeat = repeat, tail = tail, i = round(a*toFloat(n)+b) })) n repeat
 
                 Unsolved _ ->
                     Just fr
@@ -979,10 +1015,13 @@ buildRepeatF repeater n fr =
         NextF ->
             case repeater of
                 Just (FRepeater { a, b, repeat, tail, i }) ->
-                    if i == 0 then
-                        buildRepeatF Nothing n tail
+                    if i <= 0 then
+                        Nothing
                     else
-                        buildRepeatF (Just (FRepeater { a = a, b = b, repeat = repeat, tail = tail, i = i-1 })) n repeat
+                        if i == 1 then
+                            buildRepeatF Nothing n tail
+                        else
+                            buildRepeatF (Just (FRepeater { a = a, b = b, repeat = repeat, tail = tail, i = i-1 })) n repeat
 
                 _ ->
                     Nothing
@@ -1003,7 +1042,7 @@ buildRepeatL repeater n ll =
         RepeatL { ab, repeat, tail } ->
             case ab of
                 Solved {a, b} ->
-                    buildRepeatL (Just (LRepeater { a = a, b = b, repeat = repeat, tail = tail, i = a*n+b })) n repeat
+                    buildRepeatL (Just (LRepeater { a = a, b = b, repeat = repeat, tail = tail, i = round(a*toFloat(n)+b) })) n repeat
 
                 Unsolved _ ->
                     Just ll
@@ -1011,10 +1050,13 @@ buildRepeatL repeater n ll =
         NextL ->
             case repeater of
                 Just (LRepeater { a, b, repeat, tail, i }) ->
-                    if i == 0 then
-                        buildRepeatL Nothing n tail
+                    if i <= 0 then
+                        Nothing
                     else
-                        buildRepeatL (Just (LRepeater { a = a, b = b, repeat = repeat, tail = tail, i = i-1 })) n repeat
+                        if i == 1 then
+                            buildRepeatL Nothing n tail
+                        else
+                            buildRepeatL (Just (LRepeater { a = a, b = b, repeat = repeat, tail = tail, i = i-1 })) n repeat
 
                 _ ->
                     Nothing
@@ -1519,60 +1561,375 @@ applyN n f b =
         f (applyN (n-1) f b)
 
 
-inferFunction : ProofTree -> Int -> ProofTree -> Int -> Maybe (Repeat a)
-inferFunction large largeN small smallN =
-    case (large, small) of
-        (SOp s1, SOp s2) ->
-            inferFunctionS s1 largeN s2 smallN
+repeatFuncS : (SquareOp -> a) -> SquareOp -> ConvFunc a -> Maybe (a -> a)
+repeatFuncS rest ss conv =
+    case ss of
+        LCutS l s ->
+            repeatFuncL (rest << \x -> LCutS x s) l conv
+                |> ifFailed (repeatFuncS (rest << LCutS l) s conv)
 
-        (ROp r1, ROp r2) ->
-            inferFunctionR r1 largeN r2 smallN
+        SplitInnerSquare f s ->
+            repeatFuncF (rest << \x -> SplitInnerSquare x s) f conv
+                |> ifFailed (repeatFuncS (rest << SplitInnerSquare f) s conv)
 
-        (TOp t1, TOp t2) ->
-            inferFunctionT t1 largeN t2 smallN
+        SplitOuterFrame f s ->
+            repeatFuncF (rest << \x -> SplitOuterFrame x s) f conv
+                |> ifFailed (repeatFuncS (rest << SplitOuterFrame f) s conv)
 
-        (FOp f1, FOp f2) ->
-            inferFunctionF f1 largeN f2 smallN
+        Split4 s1 s2 s3 s4 ->
+            repeatFuncS (rest << \x -> Split4 x s2 s3 s4) s1 conv
+                |> ifFailed (repeatFuncS (rest << \x -> Split4 s1 x s3 s4) s2 conv)
+                |> ifFailed (repeatFuncS (rest << \x -> Split4 s1 s2 x s4) s3 conv)
+                |> ifFailed (repeatFuncS (rest << Split4 s1 s2 s3) s4 conv)
 
-        (LOp l1, LOp l2) ->
-            inferFunctionL l1 largeN l2 smallN
+        SplitDiaS t1 t2 ->
+            repeatFuncT (rest << \x -> SplitDiaS x t2) t1 conv
+                |> ifFailed (repeatFuncT (rest << SplitDiaS t1) t2 conv)
 
-
-inferFunctionS : SquareOp -> Int -> SquareOp -> Int -> Maybe (Repeat a)
-inferFunctionS s1 largeN s2 smallN =
-    case (s1, s2) of
-        (LCutS l1 s1, LCutS l2 s2) ->
-            inferFunctionL l1 largeN l2 smallN
-                |> ifFailed (inferFunctionS s1 largeN s2 smallN)
-
-        (SplitInnerSquare f1 s1, SplitInnerSquare f2 s2) ->
-            inferFunctionF f1 largeN f2 smallN
-                |> ifFailed (inferFunctionS s1 largeN s2 smallN)
-
-        (SplitOuterFrame f1 s1, SplitOuterFrame f2 s2) ->
-            inferFunctionF f1 largeN f2 smallN
-                |> ifFailed (inferFunctionS s1 largeN s2 smallN)
-
-        (Split4 s11 s12 s13 s14, SplitOuterFrame s21 s22 s23 s24) ->
-            inferFunctionS s11 largeN s21 smallN
-                |> ifFailed (inferFunctionS s12 largeN s22 smallN)
-                |> ifFailed (inferFuncitonS s13 largeN s23 smallN)
-                |> ifFailed (inferFunctionS s14 largeN s24 smallN)
-
-        (RepeatS { ab, repeat, tail }, ss) ->
-            case ab of
-                Solved { a, b } ->
-                    round (a*smallN + b)
-
-                Unsolved n ->
-                    
+        NextS ->
+            conv.s rest
 
         _ ->
             Nothing
 
 
-countOccurances : (a -> a -> Maybe (Diff a)) -> a -> a -> (Repeat a -> a) -> (a -> a) -> a -> (a -> ProofTree) -> Int -> ProofTree -> Int -> Maybe (Repeat a)
-countOccurances lowerDiffFunc defaultVal next repeat trial ss rest largeN small smallN =
+repeatFuncR : (RectOp -> a) -> RectOp -> ConvFunc a -> Maybe (a -> a)
+repeatFuncR rest re conv =
+    case re of
+        SplitSquare s r ->
+            repeatFuncS (rest << \x -> SplitSquare x r) s conv
+                |> ifFailed (repeatFuncR (rest << SplitSquare s) r conv)
+
+        SplitDiaR t1 t2 ->
+            repeatFuncT (rest << \x -> SplitDiaR x t2) t1 conv
+                |> ifFailed (repeatFuncT (rest << SplitDiaR t1) t2 conv)
+
+        ToSquare s ->
+            repeatFuncS (rest << ToSquare) s conv
+
+        Rotate r ->
+            repeatFuncR (rest << Rotate) r conv
+
+        NextR ->
+            conv.r rest
+
+        _ ->
+            Nothing
+
+
+repeatFuncF : (FrameOp -> a) -> FrameOp -> ConvFunc a -> Maybe (a -> a)
+repeatFuncF rest fr conv =
+    case fr of
+        SplitFrame r1 r2 r3 r4 ->
+            repeatFuncR (rest << \x -> SplitFrame x r2 r3 r4) r1 conv
+                |> ifFailed (repeatFuncR (rest << \x -> SplitFrame r1 x r3 r4) r2 conv)
+                |> ifFailed (repeatFuncR (rest << \x -> SplitFrame r1 r2 x r4) r3 conv)
+                |> ifFailed (repeatFuncR (rest << SplitFrame r1 r2 r3) r4 conv)
+
+        NextF ->
+            conv.f rest
+
+        _ ->
+            Nothing
+
+
+repeatFuncT : (TriOp -> a) -> TriOp -> ConvFunc a -> Maybe (a -> a)
+repeatFuncT rest tr conv =
+    case tr of
+        SplitTST t1 s t2 ->
+            repeatFuncT (rest << \x -> SplitTST x s t2) t1 conv
+                |> ifFailed (repeatFuncS (rest << \x -> SplitTST t1 x t2) s conv)
+                |> ifFailed(repeatFuncT (rest << SplitTST t1 s) t2 conv)
+
+        LCutT l t ->
+            repeatFuncL (rest << \x -> LCutT x t) l conv
+                |> ifFailed (repeatFuncT (rest << LCutT l) t conv)
+
+        SplitSide r t ->
+            repeatFuncR (rest << \x -> SplitSide x t) r conv
+                |> ifFailed (repeatFuncT (rest << SplitSide r) t conv)
+
+        NextT ->
+            conv.t rest
+
+        _ ->
+            Nothing
+
+
+repeatFuncL : (LOp -> a) -> LOp -> ConvFunc a -> Maybe (a -> a)
+repeatFuncL rest ll conv =
+    case ll of
+        SplitEnds r l ->
+            repeatFuncR (rest << \x -> SplitEnds x l) r conv
+                |> ifFailed (repeatFuncL (rest << SplitEnds r) l conv)
+
+        NextL ->
+            conv.l rest
+
+        _ ->
+            Nothing
+
+
+inferFunction : ProofTree -> Int -> ProofTree -> Int -> RepeatConv a -> Maybe (Repeat a)
+inferFunction large largeN small smallN conv =
+    case (large, small) of
+        (SOp s1, SOp s2) ->
+            inferFunctionS s1 largeN s2 smallN conv
+
+        (ROp r1, ROp r2) ->
+            inferFunctionR r1 largeN r2 smallN conv
+
+        (TOp t1, TOp t2) ->
+            inferFunctionT t1 largeN t2 smallN conv
+
+        (FOp f1, FOp f2) ->
+            inferFunctionF f1 largeN f2 smallN conv
+
+        (LOp l1, LOp l2) ->
+            inferFunctionL l1 largeN l2 smallN conv
+
+        _ ->
+            Nothing
+
+
+inferFunctionS : SquareOp -> Int -> SquareOp -> Int -> RepeatConv a -> Maybe (Repeat a)
+inferFunctionS sq1 largeN sq2 smallN conv =
+    case (sq1, sq2) of
+        (LCutS l1 s1, LCutS l2 s2) ->
+            inferFunctionL l1 largeN l2 smallN conv
+                |> ifFailed (inferFunctionS s1 largeN s2 smallN conv)
+
+        (SplitInnerSquare f1 s1, SplitInnerSquare f2 s2) ->
+            inferFunctionF f1 largeN f2 smallN conv
+                |> ifFailed (inferFunctionS s1 largeN s2 smallN conv)
+
+        (SplitOuterFrame f1 s1, SplitOuterFrame f2 s2) ->
+            inferFunctionF f1 largeN f2 smallN conv
+                |> ifFailed (inferFunctionS s1 largeN s2 smallN conv)
+
+        (Split4 s11 s12 s13 s14, Split4 s21 s22 s23 s24) ->
+            inferFunctionS s11 largeN s21 smallN conv
+                |> ifFailed (inferFunctionS s12 largeN s22 smallN conv)
+                |> ifFailed (inferFunctionS s13 largeN s23 smallN conv)
+                |> ifFailed (inferFunctionS s14 largeN s24 smallN conv)
+
+        (RepeatS { ab, repeat, tail }, ss) ->
+            case ab of
+                Solved { a, b } ->
+                    buildRepeatS Nothing smallN (RepeatS {ab = ab, repeat = repeat, tail = tail })
+                        |> Maybe.andThen (\x -> inferFunctionS x largeN ss smallN conv)
+
+                Unsolved n ->
+                    case repeatFuncS (\x -> x) repeat { s = Just, r = \_ -> Nothing, t = \_ -> Nothing, f = \_ -> Nothing, l = \_ -> Nothing } of
+                        Just func ->
+                            let
+                                maxApplys m =
+                                    case findLowerDiffS (applyN m func NextS) sq2 of
+                                        Just _ ->
+                                            maxApplys (m+1)
+
+                                        Nothing ->
+                                            m - 1
+
+                                repeatNum =
+                                    maxApplys 1
+
+                                a =
+                                    toFloat(n-repeatNum)/toFloat(largeN-smallN)
+                            in
+                            conv.s ({ ab = Solved { a = a, b = toFloat(n) - toFloat(largeN)*a }, repeat = repeat, tail = tail })
+
+                        Nothing ->
+                            Nothing
+
+        _ ->
+            Nothing
+
+
+inferFunctionR : RectOp -> Int -> RectOp -> Int -> RepeatConv a -> Maybe (Repeat a)
+inferFunctionR re1 largeN re2 smallN conv =
+    case (re1, re2) of
+        (SplitSquare s1 r1, SplitSquare s2 r2) ->
+            inferFunctionS s1 largeN s2 smallN conv
+                |> ifFailed (inferFunctionR r1 largeN r2 smallN conv)
+
+        (SplitDiaR t11 t12, SplitDiaR t21 t22) ->
+            inferFunctionT t11 largeN t21 smallN conv
+                |> ifFailed (inferFunctionT t12 largeN t22 smallN conv)
+
+        (ToSquare s1, ToSquare s2) ->
+            inferFunctionS s1 largeN s2 smallN conv
+
+        (Rotate r1, Rotate r2) ->
+            inferFunctionR r1 largeN r2 smallN conv
+
+        (RepeatR { ab, repeat, tail } , re) ->
+            case ab of
+                Solved { a, b } ->
+                    buildRepeatR Nothing smallN (RepeatR { ab = ab, repeat = repeat, tail = tail })
+                        |> Maybe.andThen (\x -> inferFunctionR x largeN re smallN conv)
+
+                Unsolved n ->
+                    case repeatFuncR (\x -> x) repeat { s = \_ -> Nothing, r = Just, t = \_ -> Nothing, f = \_ -> Nothing, l = \_ -> Nothing } of
+                        Just func ->
+                            let
+                                maxApplys m =
+                                    case findLowerDiffR (applyN m func NextR) re2 of
+                                        Just _ ->
+                                            maxApplys (m+1)
+
+                                        Nothing ->
+                                            m - 1
+
+                                repeatNum =
+                                    maxApplys 1
+
+                                a =
+                                    toFloat(n-repeatNum)/toFloat(largeN-smallN)
+                            in
+                            conv.r { ab = Solved { a = a, b = toFloat(n) - toFloat(largeN)*a }, repeat = repeat, tail = tail }
+
+                        Nothing ->
+                            Nothing
+
+        _ ->
+            Nothing
+
+
+inferFunctionF : FrameOp -> Int -> FrameOp -> Int -> RepeatConv a -> Maybe (Repeat a)
+inferFunctionF fr1 largeN fr2 smallN conv =
+    case (fr1, fr2) of
+        (SplitFrame r11 r12 r13 r14, SplitFrame r21 r22 r23 r24) ->
+            inferFunctionR r11 largeN r21 smallN conv
+                |> ifFailed (inferFunctionR r12 largeN r22 smallN conv)
+                |> ifFailed (inferFunctionR r13 largeN r23 smallN conv)
+                |> ifFailed (inferFunctionR r14 largeN r24 smallN conv)
+
+        (RepeatF { ab, repeat, tail }, fr) ->
+            case ab of
+                Solved { a, b } ->
+                    buildRepeatF Nothing smallN (RepeatF { ab = ab, repeat = repeat, tail = tail })
+                        |> Maybe.andThen (\x -> inferFunctionF x largeN fr smallN conv)
+
+                Unsolved n ->
+                    case repeatFuncF (\x -> x) repeat { s = \_ -> Nothing, r = \_ -> Nothing, f = Just, l = \_ -> Nothing, t = \_ -> Nothing } of
+                        Just func ->
+                            let
+                                maxApplys m =
+                                    case findLowerDiffF (applyN m func NextF) fr2 of
+                                        Just _ ->
+                                            maxApplys (m+1)
+
+                                        Nothing ->
+                                            m - 1
+
+                                repeatNum =
+                                    maxApplys 1
+
+                                a =
+                                    toFloat(n-repeatNum)/toFloat(largeN-smallN)
+                            in
+                            conv.f { ab = Solved { a = a, b = toFloat(n) - toFloat(largeN)*a }, repeat = repeat, tail = tail }
+
+                        Nothing ->
+                            Nothing
+
+        _ ->
+            Nothing
+
+
+inferFunctionT : TriOp -> Int -> TriOp -> Int -> RepeatConv a -> Maybe (Repeat a)
+inferFunctionT tr1 largeN tr2 smallN conv =
+    case (tr1, tr2) of
+        (SplitTST t11 s1 t12, SplitTST t21 s2 t22) ->
+            inferFunctionT t11 largeN t21 smallN conv
+                |> ifFailed (inferFunctionS s1 largeN s2 smallN conv)
+                |> ifFailed (inferFunctionT t12 largeN t22 smallN conv)
+
+        (LCutT l1 t1, LCutT l2 t2) ->
+            inferFunctionL l1 largeN l2 smallN conv
+                |> ifFailed (inferFunctionT t1 largeN t2 smallN conv)
+
+        (SplitSide r1 t1, SplitSide r2 t2) ->
+            inferFunctionR r1 largeN r2 smallN conv
+                |> ifFailed (inferFunctionT t1 largeN t2 smallN conv)
+
+        (RepeatT { ab, repeat, tail }, tr) ->
+            case ab of
+                Solved { a, b } ->
+                    buildRepeatT Nothing smallN (RepeatT { ab = ab, repeat = repeat, tail = tail })
+                        |> Maybe.andThen (\x -> inferFunctionT x largeN tr smallN conv)
+
+                Unsolved n ->
+                    case repeatFuncT (\x -> x) repeat { s = \_ -> Nothing, r = \_ -> Nothing, f = \_ -> Nothing, l = \_ -> Nothing, t = Just } of
+                        Just func ->
+                            let
+                                maxApplys m =
+                                    case findLowerDiffT (applyN m func NextT) tr2 of
+                                        Just _ ->
+                                            maxApplys (m+1)
+
+                                        Nothing ->
+                                            m - 1
+
+                                repeatNum =
+                                    maxApplys 1
+
+                                a =
+                                    toFloat(n-repeatNum)/toFloat(largeN-smallN)
+                            in
+                            conv.t { ab = Solved { a = a, b = toFloat(n) - toFloat(largeN)*a }, repeat = repeat, tail = tail }
+
+                        Nothing ->
+                            Nothing
+
+        _ ->
+            Nothing
+
+
+inferFunctionL : LOp -> Int -> LOp -> Int -> RepeatConv a -> Maybe (Repeat a)
+inferFunctionL ll1 largeN ll2 smallN conv =
+    case (ll1, ll2) of
+        (SplitEnds r1 l1, SplitEnds r2 l2) ->
+            inferFunctionR r1 largeN r2 smallN conv
+                |> ifFailed (inferFunctionL l1 largeN l2 smallN conv)
+
+        (RepeatL { ab, repeat, tail }, ll) ->
+            case ab of
+                Solved { a, b } ->
+                    buildRepeatL Nothing smallN (RepeatL { ab = ab, repeat = repeat, tail = tail })
+                        |> Maybe.andThen (\x -> inferFunctionL x largeN ll smallN conv)
+
+                Unsolved n ->
+                    case repeatFuncL (\x -> x) repeat { s = \_ -> Nothing, r = \_ -> Nothing, f = \_ -> Nothing, l = Just, t = \_ -> Nothing } of
+                        Just func ->
+                            let
+                                maxApplys m =
+                                    case findLowerDiffL (applyN m func NextL) ll2 of
+                                        Just _ ->
+                                            maxApplys (m+1)
+
+                                        Nothing ->
+                                            m - 1
+
+                                repeatNum =
+                                    maxApplys 1
+
+                                a =
+                                    toFloat(n-repeatNum)/toFloat(largeN-smallN)
+                            in
+                            conv.l { ab = Solved { a = a, b = toFloat(n) - toFloat(largeN)*a }, repeat = repeat, tail = tail }
+
+                        Nothing ->
+                            Nothing
+
+        _ ->
+            Nothing
+
+
+
+countOccurances : RepeatConv a -> (a -> a -> Maybe (Diff a)) -> a -> a -> (Repeat a -> a) -> (a -> a) -> a -> (a -> ProofTree) -> Int -> ProofTree -> Int -> Maybe (Repeat a)
+countOccurances conv lowerDiffFunc defaultVal next repeat trial ss rest largeN small smallN =
     if trial next == next then
         Nothing
     else
@@ -1590,7 +1947,7 @@ countOccurances lowerDiffFunc defaultVal next repeat trial ss rest largeN small 
         in
         case maxApplys 1 of
             Just (n, tail) ->
-                inferFunction (rest (repeat { ab = Unsolved n, repeat = trial next, tail = tail })) largeN small smallN
+                inferFunction (rest (repeat { ab = Unsolved (n+1), repeat = trial next, tail = tail })) largeN small smallN conv
 
             Nothing ->
                 Nothing
@@ -1821,6 +2178,9 @@ findLowerDiffS ss1 ss2 =
         (NextS, s) ->
             Just (Diff (SOp s))
 
+        (RecurseS, s) ->
+            Just (Diff (SOp s))
+
         _ ->
             Nothing
 
@@ -1865,6 +2225,9 @@ findLowerDiffR re1 re2 =
             Just NoDiff
 
         (NextR, r) ->
+            Just (Diff (ROp r))
+
+        (RecurseR, r) ->
             Just (Diff (ROp r))
 
         _ ->
@@ -1956,6 +2319,9 @@ findLowerDiffT tr1 tr2 =
         (NextT, t) ->
             Just (Diff (TOp t))
 
+        (RecurseT, t) ->
+            Just (Diff (TOp t))
+
         _ ->
             Nothing
 
@@ -1982,13 +2348,16 @@ findLowerDiffL ll1 ll2 =
         (NextL, l) ->
             Just (Diff (LOp l))
 
+        (RecurseL, l) ->
+            Just (Diff (LOp l))
+
         _ ->
             Nothing
 
 
 repeatSearchS : SquareOp -> Int -> ProofTree -> Int -> (SquareOp -> ProofTree) -> SquareOp
 repeatSearchS ss largeN small smallN rest =
-    case findRepeatS (\x -> x) ss rest largeN small smallN { s = countOccurances (du findLowerDiffS unwrapS) (Square 0) NextS RepeatS, r = aN, t = aN, f = aN, l = aN } of
+    case findRepeatS (\x -> x) ss rest largeN small smallN { s = countOccurances { s = Just, r = \_ -> Nothing, t = \_ -> Nothing, f = \_ -> Nothing, l = \_ -> Nothing } (du findLowerDiffS unwrapS) (Square 0) NextS RepeatS, r = aN, t = aN, f = aN, l = aN } of
         Just repeat ->
             RepeatS { repeat | tail = repeatSearchS repeat.tail largeN small smallN (rest << \x -> RepeatS { repeat | tail = x }) }
 
@@ -2056,7 +2425,7 @@ repeatSearchS ss largeN small smallN rest =
 
 repeatSearchR : RectOp -> Int -> ProofTree -> Int -> (RectOp -> ProofTree) -> RectOp
 repeatSearchR re largeN small smallN rest =
-    case findRepeatR (\x -> x) re rest largeN small smallN { s = aN, r = countOccurances (du findLowerDiffR unwrapR) (Rect 0 0) NextR RepeatR, t = aN, f = aN, l = aN } of
+    case findRepeatR (\x -> x) re rest largeN small smallN { s = aN, r = countOccurances { r = Just, s = \_ -> Nothing, t = \_ -> Nothing, f = \_ -> Nothing, l = \_ -> Nothing } (du findLowerDiffR unwrapR) (Rect 0 0) NextR RepeatR, t = aN, f = aN, l = aN } of
         Just repeat ->
             RepeatR { repeat | tail = repeatSearchR repeat.tail largeN small smallN (rest << \x -> RepeatR { repeat | tail = x }) }
 
@@ -2094,7 +2463,7 @@ repeatSearchR re largeN small smallN rest =
 
 repeatSearchF : FrameOp -> Int -> ProofTree -> Int -> (FrameOp -> ProofTree) -> FrameOp
 repeatSearchF fr largeN small smallN rest  =
-    case findRepeatF (\x -> x) fr rest largeN small smallN { s = aN, r = aN, t = aN, f = countOccurances (du findLowerDiffF unwrapF) (Frame 0 0) NextF RepeatF, l = aN } of
+    case findRepeatF (\x -> x) fr rest largeN small smallN { s = aN, r = aN, t = aN, f = countOccurances { f = Just, s = \_ -> Nothing, r = \_ -> Nothing, t = \_ -> Nothing, l = \_ -> Nothing } (du findLowerDiffF unwrapF) (Frame 0 0) NextF RepeatF, l = aN } of
         Just repeat ->
             RepeatF { repeat | tail = repeatSearchF repeat.tail largeN small smallN (rest << \x -> RepeatF { repeat | tail = x }) }
 
@@ -2122,7 +2491,7 @@ repeatSearchF fr largeN small smallN rest  =
 
 repeatSearchT : TriOp -> Int -> ProofTree -> Int -> (TriOp -> ProofTree) -> TriOp
 repeatSearchT tr largeN small smallN rest =
-    case findRepeatT (\x -> x) tr rest largeN small smallN { s = aN, r = aN, t = countOccurances (du findLowerDiffT unwrapT) (Tri 0) NextT RepeatT, f = aN, l = aN } of
+    case findRepeatT (\x -> x) tr rest largeN small smallN { s = aN, r = aN, t = countOccurances { s = \_ -> Nothing, r = \_ -> Nothing, f = \_ -> Nothing, l = \_ -> Nothing, t = Just } (du findLowerDiffT unwrapT) (Tri 0) NextT RepeatT, f = aN, l = aN } of
         Just repeat ->
             RepeatT { repeat | tail = repeatSearchT repeat.tail largeN small smallN (rest << \x -> RepeatT { repeat | tail = x }) }
 
@@ -2167,7 +2536,7 @@ repeatSearchT tr largeN small smallN rest =
 
 repeatSearchL : LOp -> Int -> ProofTree -> Int -> (LOp -> ProofTree) -> LOp
 repeatSearchL ll largeN small smallN rest =
-    case findRepeatL (\x -> x) ll rest largeN small smallN { s = aN, r = aN, t = aN, f = aN, l = countOccurances (du findLowerDiffL unwrapL) (L 0) NextL RepeatL } of
+    case findRepeatL (\x -> x) ll rest largeN small smallN { s = aN, r = aN, t = aN, f = aN, l = countOccurances { l = Just, s = \_ -> Nothing, t = \_ -> Nothing, f = \_ -> Nothing, r = \_ -> Nothing } (du findLowerDiffL unwrapL) (L 0) NextL RepeatL } of
         Just repeat ->
             RepeatL { repeat | tail = repeatSearchL repeat.tail largeN small smallN (rest << \x -> RepeatL { repeat | tail = x}) }
 
@@ -2207,8 +2576,65 @@ repeatSearch smallN small largeN large =
 
 
 findBase : ProofTree -> Int -> ProofTree -> Maybe ProofTree
-findBase _ _ _ =
-    Nothing
+findBase step n base =
+    case (buildRepeat n step, base) of
+        (Just (SOp s1), SOp s2) ->
+            case findLowerDiffS s1 s2 of
+                Just (Diff p) ->
+                    ifFailed (Just p) (findBase step (n-1) p)
+
+                Just NoDiff ->
+                    Just (SOp (Square 0))
+
+                Nothing ->
+                    Nothing
+
+        (Just (ROp r1), ROp r2) ->
+            case findLowerDiffR r1 r2 of
+                Just (Diff p) ->
+                    ifFailed (Just p) (findBase step (n-1) p)
+
+                Just NoDiff ->
+                    Just (ROp (Rect 0 0))
+
+                Nothing ->
+                    Nothing
+
+        (Just (FOp f1), FOp f2) ->
+            case findLowerDiffF f1 f2 of
+                Just (Diff p) ->
+                    ifFailed (Just p) (findBase step (n-1) p)
+
+                Just NoDiff ->
+                    Just (FOp (Frame 0 0))
+
+                Nothing ->
+                    Nothing
+
+        (Just (TOp t1), TOp t2) ->
+            case findLowerDiffT t1 t2 of
+                Just (Diff p) ->
+                    ifFailed (Just p) (findBase step (n-1) p)
+
+                Just NoDiff ->
+                    Just (TOp (Tri 0))
+
+                Nothing ->
+                    Nothing
+
+        (Just (LOp l1), LOp l2) ->
+            case findLowerDiffL l1 l2 of
+                Just (Diff p) ->
+                    ifFailed (Just p) (findBase step (n-1) p)
+
+                Just NoDiff ->
+                    Just (LOp (L 0))
+
+                Nothing ->
+                    Nothing
+
+        _ ->
+            Nothing
 
 
 tryStepCase : (Int, Int) -> (ProofTree, ProofTree) -> Maybe SchematicProof
@@ -2314,9 +2740,201 @@ view model =
                     Nothing ->
                         [ Html.text "Something has gone terribly wrong" ]
 
-            Done ->
-                []
+            DoneI i ->
+                input
+                    [ type_ "number", Html.Attributes.value i.n, onInput SetN ]
+                    []
+                ::select
+                    [ onInput SetShape ]
+                    [ option [ Html.Attributes.value "square", Html.Attributes.selected True ] [ Html.text "Square" ]
+                    , option [ Html.Attributes.value "rect" ] [ Html.text "Rectangle" ]
+                    , option [ Html.Attributes.value "tri" ] [ Html.text "Triangle" ]
+                    , option [ Html.Attributes.value "l" ] [ Html.text "L" ]
+                    , option [ Html.Attributes.value "frame" ] [ Html.text "Frame" ]
+                    ]
+                :: input [ type_ "number", Html.Attributes.value i.p1, onInput SetP1 ] []
+                :: (if i.shape == "rect" || i.shape == "frame" then [ input [ type_ "number", Html.Attributes.value i.p2, onInput SetP2 ] [] ] else [])
+                ++ [ button [ onClick Next ] [ Html.text "Show proof" ] ]
+
+            Done (Just pt) ->
+                drawShapes "" pt
+
+            Done Nothing ->
+                [ Html.text "No Proof Found" ]
     }
+
+
+evaluateProofS m shape step schematic =
+    case (shape, step) of
+        (Square n, LCutS l s) ->
+            if n > 1 then
+                Maybe.map2 LCutS (evaluateProofL m (L n) l schematic) (evaluateProofS m (Square (n-1)) s schematic)
+            else
+                Nothing
+
+        (Square n, SplitDiaS t1 t2) ->
+            if n > 1 then
+                Maybe.map2 SplitDiaS (evaluateProofT m (Tri n) t1 schematic) (evaluateProofT m (Tri (n-1)) t2 schematic)
+            else
+                Nothing
+
+        (Square n, SplitOuterFrame f s) ->
+            if n >= 3 then
+                Maybe.map2 SplitOuterFrame (evaluateProofF m (Frame n 1) f schematic) (evaluateProofS m (Square (n-2)) s schematic)
+            else
+                Nothing
+
+        (Square n, SplitInnerSquare f s) ->
+            if n >= 3 then
+                Maybe.map2 SplitInnerSquare (evaluateProofF m (Frame n ((n-1)//2)) f schematic) (evaluateProofS m (Square (n-2*((n-1)//2))) s schematic)
+            else
+                Nothing
+
+        (Square n, Split4 s1 s2 s3 s4) ->
+            if n >= 2 && modBy 2 n == 0 then
+                Maybe.map4 Split4 (evaluateProofS m (Square (n//2)) s1 schematic) (evaluateProofS m (Square (n//2)) s2 schematic) (evaluateProofS m (Square (n//2)) s3 schematic) (evaluateProofS m (Square (n//2)) s4 schematic)
+            else
+                Nothing
+
+        (Square n, Square _) ->
+            Just (Square n)
+
+        (Square n, RecurseS) ->
+            Maybe.andThen unwrapS (evaluateProof (m-1) (SOp (Square n)) schematic)
+
+        _ ->
+            Nothing
+
+
+evaluateProofR m shape step schematic =
+    case (shape, step) of
+        (Rect n1 n2, SplitDiaR t1 t2) ->
+            if n1-n2 == 1 then
+                Maybe.map2 SplitDiaR (evaluateProofT m (Tri n2) t1 schematic) (evaluateProofT m (Tri n2) t2 schematic)
+            else if n2-n1 == 1 then
+                Maybe.map2 SplitDiaR (evaluateProofT m (Tri n1) t1 schematic) (evaluateProofT m (Tri n1) t2 schematic)
+            else
+                Nothing
+
+        (Rect n1 n2, SplitSquare s r) ->
+            if n1 > n2 then
+                Maybe.map2 SplitSquare (evaluateProofS m (Square n2) s schematic) (evaluateProofR m (Rect (n1-n2) n2) r schematic)
+            else if n2 > n1 then
+                Maybe.map2 SplitSquare (evaluateProofS m (Square n1) s schematic) (evaluateProofR m (Rect n1 (n2-n1)) r schematic)
+            else
+                Nothing
+
+        (Rect n1 n2, ToSquare s) ->
+            if n1 == n2 then
+                Maybe.map ToSquare (evaluateProofS m (Square n1) s schematic)
+
+            else
+                Nothing
+
+        (Rect n1 n2, Rotate r) ->
+            Maybe.map Rotate (evaluateProofR m (Rect n2 n1) r schematic)
+
+        (Rect n1 n2, Rect _ _) ->
+            Just (Rect n1 n2)
+
+        (Rect n1 n2, RecurseR) ->
+            Maybe.andThen unwrapR (evaluateProof (m-1) (ROp (Rect n1 n2)) schematic)
+
+        _ ->
+            Nothing
+
+
+evaluateProofT m shape step schematic =
+    case (shape, step) of
+        (Tri n, SplitTST t1 s t2) ->
+            if n > 1 then
+                Maybe.map3 SplitTST (evaluateProofT m (Tri (n//2)) t1 schematic) (evaluateProofS m (Square (n-n//2)) s schematic) (evaluateProofT m (Tri (n//2)) t2 schematic)
+            else
+                Nothing
+
+        (Tri n, LCutT l t) ->
+            if n > 2 then
+                Maybe.map2 LCutT (evaluateProofL m (L n) l schematic) (evaluateProofT m (Tri (n-2)) t schematic)
+            else
+                Nothing
+
+        (Tri n, SplitSide r t) ->
+            if n > 1 then
+                Maybe.map2 SplitSide (evaluateProofR m (Rect 1 n) r schematic) (evaluateProofT m (Tri (n-1)) t schematic)
+            else
+                Nothing
+
+        (Tri n, Tri _) ->
+            Just (Tri n)
+
+        (Tri n, RecurseT) ->
+            Maybe.andThen unwrapT (evaluateProof (m-1) (TOp (Tri n)) schematic)
+
+        _ ->
+            Nothing
+
+
+evaluateProofF m shape step schematic =
+    case (shape, step) of
+        (Frame n1 n2, SplitFrame r1 r2 r3 r4) ->
+            Maybe.map4 SplitFrame (evaluateProofR m (Rect (n1-n2) n2) r1 schematic) (evaluateProofR m (Rect (n1-n2) n2) r2 schematic) (evaluateProofR m (Rect n2 (n1-n2)) r3 schematic) (evaluateProofR m (Rect n2 (n1-n2)) r4 schematic)
+
+        (Frame n1 n2, Frame _ _) ->
+            Just (Frame n1 n2)
+
+        (Frame n1 n2, RecurseF) ->
+            Maybe.andThen unwrapF (evaluateProof (m-1) (FOp (Frame n1 n2)) schematic)
+
+        _ ->
+            Nothing
+
+
+evaluateProofL m shape step schematic =
+    case (shape, step) of
+        (L n, SplitEnds r l) ->
+            if n > 1 then
+                Maybe.map2 SplitEnds (evaluateProofR m (Rect 1 2) r schematic) (evaluateProofL m (L (n-1)) l schematic)
+
+            else
+                Nothing
+
+        (L n, L _) ->
+            Just (L n)
+
+        (L n, RecurseL) ->
+            Maybe.andThen unwrapL (evaluateProof (m-1) (LOp (L n)) schematic)
+
+        _ ->
+            Nothing
+
+
+evaluateProof n start ({ step, base } as schematic) =
+    let
+        evalP p =
+            case (start, p) of
+                (SOp s1, SOp s2) ->
+                    Maybe.map SOp (evaluateProofS n s1 s2 schematic)
+
+                (ROp r1, ROp r2) ->
+                    Maybe.map ROp (evaluateProofR n r1 r2 schematic)
+
+                (FOp f1, FOp f2) ->
+                    Maybe.map FOp (evaluateProofF n f1 f2 schematic)
+
+                (TOp t1, TOp t2) ->
+                    Maybe.map TOp (evaluateProofT n t1 t2 schematic)
+
+                (LOp l1, LOp l2) ->
+                    Maybe.map LOp (evaluateProofL n l1 l2 schematic)
+
+                _ ->
+                    Nothing
+        in
+        if n == 1 then
+            evalP base
+
+        else
+            Maybe.andThen evalP (buildRepeat n step)
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -2373,15 +2991,53 @@ update msg model =
 
                 Next ->
                     if List.length model.proofs >= 2 then
-                        ( {model | stage = Done }, Cmd.none )
+                        --( {model | stage = Done <| Debug.log "" (Maybe.map2 infer (List.Extra.getAt 0 model.proofs) (List.Extra.getAt 1 model.proofs) |> Maybe.withDefault Nothing) }, Cmd.none )
+                        ( { model | stage = DoneI { n = "", shape = "square", p1 = "", p2 = "" } }, Cmd.none )
                     else
                         ( { model | stage = Initialising { n = "", shape = "square", p1 = "", p2 = "" } }, Cmd.none )
 
                 _ ->
                     ( model, Cmd.none )
 
-        Done ->
+        DoneI i ->
+            case msg of
+                SetN n ->
+                    ({ model | stage = DoneI { i | n = n } }, Cmd.none)
+
+                SetShape shape ->
+                    ({ model | stage = DoneI { i | shape = shape } }, Cmd.none)
+
+                SetP1 p1 ->
+                    ({ model | stage = DoneI { i | p1 = p1 } }, Cmd.none)
+
+                SetP2 p2 ->
+                    ({ model | stage = DoneI { i | p2 = p2 } }, Cmd.none)
+
+                Next ->
+                    case (String.toInt i.n, (i.shape, String.toInt i.p1, String.toInt i.p2)) of
+                        ( Just n, ("square", Just p1, _)) ->
+                            ( { model | stage = Done (Maybe.andThen (evaluateProof n (SOp (Square p1))) (Maybe.map2 infer (List.Extra.getAt 0 model.proofs) (List.Extra.getAt 1 model.proofs) |> Maybe.withDefault Nothing)) }, Cmd.none )
+
+                        ( Just n, ("rect", Just p1, Just p2)) ->
+                            ( { model | stage = Done (Maybe.andThen (evaluateProof n (ROp (Rect p1 p2))) (Maybe.map2 infer (List.Extra.getAt 0 model.proofs) (List.Extra.getAt 1 model.proofs) |> Maybe.withDefault Nothing)) }, Cmd.none )
+
+                        ( Just n, ("tri", Just p1, _ )) ->
+                            ( { model | stage = Done (Maybe.andThen (evaluateProof n (TOp (Tri p1))) (Maybe.map2 infer (List.Extra.getAt 0 model.proofs) (List.Extra.getAt 1 model.proofs) |> Maybe.withDefault Nothing)) }, Cmd.none )
+
+                        ( Just n, ("l", Just p1, _ )) ->
+                            ( { model | stage = Done (Maybe.andThen (evaluateProof n (LOp (L p1))) (Maybe.map2 infer (List.Extra.getAt 0 model.proofs) (List.Extra.getAt 1 model.proofs) |> Maybe.withDefault Nothing)) }, Cmd.none )
+
+                        ( Just n, ("frame", Just p1, Just p2)) ->
+                            ( { model | stage = Done (Maybe.andThen (evaluateProof n (FOp (Frame p1 p2))) (Maybe.map2 infer (List.Extra.getAt 0 model.proofs) (List.Extra.getAt 1 model.proofs) |> Maybe.withDefault Nothing)) }, Cmd.none )
+
+                        _ ->
+                            (model, Cmd.none)
+                _ ->
+                    (model, Cmd.none)
+
+        Done _ ->
             (model, Cmd.none)
+
 
 
 subscriptions : Model -> Sub Msg
