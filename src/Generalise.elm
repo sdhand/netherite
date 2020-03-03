@@ -157,6 +157,7 @@ type Msg
     | UpdateProof ProofTree
     | AddShape
     | Delete Int
+    | SearchProof
 
 
 radius : Int
@@ -2747,7 +2748,7 @@ view model =
                 :: br [] []
                 :: Html.text "Goal:"
                 :: Maybe.withDefault [] (List.tail (List.concat (List.indexedMap makeShapeInputs shapes)))
-                ++ [ button [ onClick AddShape ] [ Html.text "+" ], br [] [], button [ onClick Next ] [ Html.text "Prove..." ] ]
+                ++ [ button [ onClick AddShape ] [ Html.text "+" ], br [] [], button [ onClick Next ] [ Html.text "Prove..." ], button [ onClick SearchProof ] [ Html.text "Discover Proof" ] ]
 
             Proving p ->
                 case List.head model.proofs of
@@ -2971,6 +2972,33 @@ evaluateProof n start ({ step, base } as schematic) =
             Maybe.andThen evalP (buildRepeat n step)
 
 
+buildInitShape : { n : String, shape : String, p1 : String, p2 : String } -> Maybe (Int, ProofTree)
+buildInitShape { n, shape, p1, p2 } =
+    case (String.toInt n, (shape, String.toInt p1, String.toInt p2)) of
+        ( Just jn, ("square", Just jp1, _)) ->
+            Just (jn, SOp (Square jp1))
+
+        ( Just jn, ("rect", Just jp1, Just jp2)) ->
+            Just (jn, ROp (Rect jp1 jp2))
+
+        ( Just jn, ("tri", Just jp1, _ )) ->
+            Just (jn, TOp (Tri jp1))
+
+        ( Just jn, ("l", Just jp1, _ )) ->
+            Just (jn, LOp (L jp1))
+
+        ( Just jn, ("frame", Just jp1, Just jp2)) ->
+            Just (jn, FOp (Frame jp1 jp2))
+
+        _ ->
+            Nothing
+
+
+findProof : ProofTree -> List ProofTree -> Maybe ProofTree
+findProof start goal =
+    Nothing
+
+
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case model.stage of
@@ -3001,30 +3029,35 @@ update msg model =
                     ({ model | stage = Initialising i (List.Extra.updateAt j (\x -> { x | p2 = p2 }) shapes) }, Cmd.none)
 
                 Next ->
-                    case (String.toInt i.n, (i.shape, String.toInt i.p1, String.toInt i.p2)) of
-                        ( Just n, ("square", Just p1, _)) ->
-                            ( { proofs = (n, (SOp (Square p1)))::model.proofs, stage = Proving { operation = "none" } }, Cmd.none )
-
-                        ( Just n, ("rect", Just p1, Just p2)) ->
-                            ( { proofs = (n, ROp (Rect p1 p2))::model.proofs, stage = Proving { operation = "none" } }, Cmd.none )
-
-                        ( Just n, ("tri", Just p1, _ )) ->
-                            ( { proofs = (n, TOp (Tri p1))::model.proofs, stage = Proving { operation = "none" } }, Cmd.none )
-
-                        ( Just n, ("l", Just p1, _ )) ->
-                            ( { proofs = (n, LOp (L p1))::model.proofs, stage = Proving { operation = "none" } }, Cmd.none )
-
-                        ( Just n, ("frame", Just p1, Just p2)) ->
-                            ( { proofs = (n, FOp (Frame p1 p2))::model.proofs, stage = Proving { operation = "none" } }, Cmd.none )
-
-                        _ ->
-                            (model, Cmd.none)
+                    ( { proofs = (Maybe.withDefault [] (Maybe.map List.singleton (buildInitShape i)))++model.proofs, stage = Proving { operation = "none" } }, Cmd.none )
 
                 AddShape ->
                     ( { model | stage = Initialising i <| shapes++[ { n = "", shape = "square", p1 = "", p2 = "" } ] }, Cmd.none )
 
                 Delete j ->
                     ( { model | stage = Initialising i (List.Extra.removeAt j shapes) }, Cmd.none )
+
+                SearchProof ->
+                    let
+                        goal =
+                            List.filterMap buildInitShape shapes
+                                |> List.concatMap (\(x, y) -> List.repeat x y)
+                    in
+                    case (buildInitShape i, List.length goal == List.length shapes) of
+                        (Just (n, start), True) ->
+                            case findProof start goal of
+                                Just pt ->
+                                    if List.length model.proofs >= 1 then
+                                        ( { proofs = (n, pt)::model.proofs, stage = DoneI { n = "", shape = "square", p1 = "", p2 = "" } }, Cmd.none )
+
+                                    else
+                                        ( { proofs = (n, pt)::model.proofs, stage = Initialising { n = "", shape = "square", p1 = "", p2 = ""} [] }, Cmd.none )
+
+                                Nothing ->
+                                    (model, Cmd.none)
+
+                        _ ->
+                            (model, Cmd.none)
 
                 _ ->
                     (model, Cmd.none)
