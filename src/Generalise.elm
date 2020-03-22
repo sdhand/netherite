@@ -132,6 +132,7 @@ type Stage
         , p1 : String
         , p2 : String
         }
+        (List { n : String, shape : String, p1 : String, p2 : String })
     | DoneI
         { n : String
         , shape : String
@@ -147,13 +148,16 @@ type alias Model =
     }
 
 type Msg
-    = SetN String
-    | SetShape String
-    | SetP1 String
-    | SetP2 String
+    = SetN (Maybe Int) String
+    | SetShape (Maybe Int) String
+    | SetP1 (Maybe Int) String
+    | SetP2 (Maybe Int) String
     | Next
     | SetOp String
     | UpdateProof ProofTree
+    | AddShape
+    | Delete Int
+    | SearchProof
 
 
 radius : Int
@@ -239,6 +243,7 @@ init _ =
                 , p1 = ""
                 , p2 = ""
                 }
+                []
         , proofs = []
         }
     , Cmd.none
@@ -2694,26 +2699,56 @@ infer (n1, p1) (n2, p2) =
             Nothing
 
 
+makeShapeInputs : Int -> { n : String, shape : String, p1 : String, p2 : String } -> List (Html Msg)
+makeShapeInputs i { n, shape, p1, p2 } =
+    Html.text ","
+    ::input [ type_ "number", Html.Attributes.value n, onInput (SetN (Just i)) ] []
+    ::Html.text "✕"
+    ::select
+        [ onInput (SetShape (Just i)) ]
+        [ option [ Html.Attributes.value "square", Html.Attributes.selected True ] [ Html.text "Square" ]
+        , option [ Html.Attributes.value "rect" ] [ Html.text "Rectangle" ]
+        , option [ Html.Attributes.value "tri" ] [ Html.text "Triangle" ]
+        , option [ Html.Attributes.value "l" ] [ Html.text "L" ]
+        , option [ Html.Attributes.value "frame" ] [ Html.text "Frame" ]
+        ]
+    ::input [ type_ "number", Html.Attributes.value p1, onInput (SetP1 (Just i)) ] []
+    :: (if shape == "rect" || shape == "frame" then [ input [ type_ "number", Html.Attributes.value p2, onInput (SetP2 (Just i)) ] [] ] else [])
+    ++ [ button [ onClick (Delete i) ] [ Html.text "Delete" ] ]
+
+
 view : Model -> Document Msg
 view model =
     { title = "Netherite"
     , body =
         case model.stage of
-            Initialising i ->
-                input
-                    [ type_ "number", Html.Attributes.value i.n, onInput SetN ]
+            Initialising i shapes ->
+                label
                     []
-                ::select
-                    [ onInput SetShape ]
-                    [ option [ Html.Attributes.value "square", Html.Attributes.selected True ] [ Html.text "Square" ]
-                    , option [ Html.Attributes.value "rect" ] [ Html.text "Rectangle" ]
-                    , option [ Html.Attributes.value "tri" ] [ Html.text "Triangle" ]
-                    , option [ Html.Attributes.value "l" ] [ Html.text "L" ]
-                    , option [ Html.Attributes.value "frame" ] [ Html.text "Frame" ]
+                    [ Html.text "n:"
+                    , input
+                        [ type_ "number", Html.Attributes.value i.n, onInput (SetN Nothing) ]
+                        []
                     ]
-                :: input [ type_ "number", Html.Attributes.value i.p1, onInput SetP1 ] []
-                :: (if i.shape == "rect" || i.shape == "frame" then [ input [ type_ "number", Html.Attributes.value i.p2, onInput SetP2 ] [] ] else [])
-                ++ [ button [ onClick Next ] [ Html.text "Prove..." ] ]
+                :: br [] []
+                :: label
+                    []
+                    ([ Html.text "Shape:"
+                    , select
+                        [ onInput (SetShape Nothing) ]
+                        [ option [ Html.Attributes.value "square", Html.Attributes.selected True ] [ Html.text "Square" ]
+                        , option [ Html.Attributes.value "rect" ] [ Html.text "Rectangle" ]
+                        , option [ Html.Attributes.value "tri" ] [ Html.text "Triangle" ]
+                        , option [ Html.Attributes.value "l" ] [ Html.text "L" ]
+                        , option [ Html.Attributes.value "frame" ] [ Html.text "Frame" ]
+                        ]
+                    , input [ type_ "number", Html.Attributes.value i.p1, onInput (SetP1 Nothing) ] []
+                    ]
+                    ++ (if i.shape == "rect" || i.shape == "frame" then [ input [ type_ "number", Html.Attributes.value i.p2, onInput (SetP2 Nothing) ] [] ] else []))
+                :: br [] []
+                :: Html.text "Goal:"
+                :: Maybe.withDefault [] (List.tail (List.concat (List.indexedMap makeShapeInputs shapes)))
+                ++ [ button [ onClick AddShape ] [ Html.text "+" ], br [] [], button [ onClick Next ] [ Html.text "Prove..." ], button [ onClick SearchProof ] [ Html.text "Discover Proof" ] ]
 
             Proving p ->
                 case List.head model.proofs of
@@ -2742,18 +2777,18 @@ view model =
 
             DoneI i ->
                 input
-                    [ type_ "number", Html.Attributes.value i.n, onInput SetN ]
+                    [ type_ "number", Html.Attributes.value i.n, onInput (SetN Nothing) ]
                     []
                 ::select
-                    [ onInput SetShape ]
+                    [ onInput (SetShape Nothing) ]
                     [ option [ Html.Attributes.value "square", Html.Attributes.selected True ] [ Html.text "Square" ]
                     , option [ Html.Attributes.value "rect" ] [ Html.text "Rectangle" ]
                     , option [ Html.Attributes.value "tri" ] [ Html.text "Triangle" ]
                     , option [ Html.Attributes.value "l" ] [ Html.text "L" ]
                     , option [ Html.Attributes.value "frame" ] [ Html.text "Frame" ]
                     ]
-                :: input [ type_ "number", Html.Attributes.value i.p1, onInput SetP1 ] []
-                :: (if i.shape == "rect" || i.shape == "frame" then [ input [ type_ "number", Html.Attributes.value i.p2, onInput SetP2 ] [] ] else [])
+                :: input [ type_ "number", Html.Attributes.value i.p1, onInput (SetP1 Nothing) ] []
+                :: (if i.shape == "rect" || i.shape == "frame" then [ input [ type_ "number", Html.Attributes.value i.p2, onInput (SetP2 Nothing) ] [] ] else [])
                 ++ [ button [ onClick Next ] [ Html.text "Show proof" ] ]
 
             Done (Just pt) ->
@@ -2908,6 +2943,52 @@ evaluateProofL m shape step schematic =
             Nothing
 
 
+{- reachable : ProofTree -> ProofTree -> Bool
+reachable shape1 shape2 =
+    case (shape1, shape2) of
+        (SOp (Square a), SOp (Square c)) ->
+            a >= c
+
+        (SOp (Square a), ROp (Rect c d)) ->
+             (a - (a-1)//2 >= c && (a-1)//2 >= d) || ((a-1)//2 >= c && a - (a-1)//2 >= d)
+
+        (SOp (Square a), TOp (Tri c)) ->
+            a >= c
+
+        (SOp (Square a), FOp (Frame c d)) ->
+            a >= c
+
+        (SOp (Square a), LOp (L c)) ->
+            a >= c
+
+        (ROp (Rect a b), SOp (Square c)) ->
+            a >= c && b >= c
+
+        (ROp (Rect a b), ROp (Rect c d)) ->
+            (a >= c && b >= d) || (a >= d && b >= c)
+
+        (ROp (Rect a b), TOp (Tri c)) ->
+            a >= c || b >= c
+
+        (ROp (Rect a b), FOp (Frame c d)) ->
+            a >= c && b >= c
+
+        (ROp (Rect a b), LOp (L c)) ->
+            a >= c && b >= c
+
+        (TOp (Tri a), SOp (Square c)) ->
+            a-(a//2) >= c
+
+        (TOp (Tri a_), ROp (Rect c d)) ->
+            let
+                a =
+                    a_-(a_//2)
+            in
+            (a - (a-1)//2 >= c && (a-1)//2 >= d) || ((a-1)//2 >= c && a - (a-1)//2 >= d) || (c == 1 && a_ >= d) || (d == 1 && a_ >= c)
+
+        (TOp-}
+
+
 evaluateProof n start ({ step, base } as schematic) =
     let
         evalP p =
@@ -2937,42 +3018,484 @@ evaluateProof n start ({ step, base } as schematic) =
             Maybe.andThen evalP (buildRepeat n step)
 
 
+buildInitShape : { n : String, shape : String, p1 : String, p2 : String } -> Maybe (Int, ProofTree)
+buildInitShape { n, shape, p1, p2 } =
+    case (String.toInt n, (shape, String.toInt p1, String.toInt p2)) of
+        ( Just jn, ("square", Just jp1, _)) ->
+            Just (jn, SOp (Square jp1))
+
+        ( Just jn, ("rect", Just jp1, Just jp2)) ->
+            Just (jn, ROp (Rect jp1 jp2))
+
+        ( Just jn, ("tri", Just jp1, _ )) ->
+            Just (jn, TOp (Tri jp1))
+
+        ( Just jn, ("l", Just jp1, _ )) ->
+            Just (jn, LOp (L jp1))
+
+        ( Just jn, ("frame", Just jp1, Just jp2)) ->
+            Just (jn, FOp (Frame jp1 jp2))
+
+        _ ->
+            Nothing
+
+
+sortPt : ProofTree -> ProofTree -> Order
+sortPt p1 p2 =
+    case (p1, p2) of
+        (SOp (Square a), SOp (Square c)) ->
+            compare a c
+
+        (SOp (Square _), SOp _) ->
+            LT
+
+        (SOp _, SOp _) ->
+            EQ
+
+        (SOp _, _) ->
+            LT
+
+        (ROp (Rect a b), ROp (Rect c d)) ->
+            case compare a c of
+                EQ ->
+                    compare b d
+
+                x ->
+                    x
+
+        (ROp (Rect _ _), ROp _) ->
+            LT
+
+        (ROp _, SOp _) ->
+            GT
+
+        (ROp _, ROp _) ->
+            EQ
+
+        (ROp _, _) ->
+            LT
+
+        (TOp (Tri a), TOp (Tri c)) ->
+            compare a c
+
+        (TOp (Tri _), TOp _) ->
+            LT
+
+        (TOp _, SOp _) ->
+            GT
+
+        (TOp _, ROp _) ->
+            GT
+
+        (TOp _, TOp _) ->
+            EQ
+
+        (TOp _, _) ->
+            LT
+
+        (FOp (Frame a b), FOp (Frame c d)) ->
+            case compare a c of
+                EQ ->
+                    compare b d
+
+                x ->
+                    x
+
+        (FOp (Frame _ _), FOp _) ->
+            LT
+
+        (FOp _, FOp _) ->
+            EQ
+
+        (FOp _, LOp _) ->
+            LT
+
+        (FOp _, _) ->
+            GT
+
+        (LOp (L a), LOp (L c)) ->
+            compare a c
+
+        (LOp (L _), LOp _) ->
+            LT
+
+        (LOp _, LOp _) ->
+            EQ
+
+        (LOp _, _) ->
+            GT
+
+
+filterGoal : List ProofTree -> List (a, List ProofTree) -> List (a, List ProofTree)
+filterGoal goal =
+    List.filter (\(_, ends) -> List.Extra.isSubsequenceOf ends goal)
+
+
+
+merge : List ProofTree -> List ProofTree -> List ProofTree
+merge a b =
+    case (a, b) of
+        ([], rest) ->
+            rest
+
+        (rest, []) ->
+            rest
+
+        (h1::t1, h2::t2) ->
+            case sortPt h1 h2 of
+                EQ ->
+                    h1::h2::merge t1 t2
+
+                LT ->
+                    h1::merge t1 b
+
+                GT ->
+                    h2::merge a t2
+
+
+diffPt : List ProofTree -> List ProofTree -> List ProofTree
+diffPt big small =
+    case (big, small) of
+        (_, []) ->
+            big
+
+        ([], _) ->
+            []
+
+        (h1::t1, h2::t2) ->
+            case sortPt h1 h2 of
+                LT ->
+                    h1::diffPt t1 small
+
+                GT ->
+                    h1::diffPt t1 t2
+
+                EQ ->
+                    diffPt t1 t2
+
+
+andSearch goal next =
+    List.concatMap (\(x, y) -> List.map (Tuple.mapBoth x (merge y)) (next (diffPt goal y))) >> filterGoal goal
+
+
+findProofS : SquareOp -> List ProofTree -> List (SquareOp, List ProofTree)
+findProofS ss goal =
+    case ss of
+        Square n ->
+            let
+                lcutSearch =
+                    if n > 1 then
+                        List.map (Tuple.mapFirst LCutS) (findProofL (L n) goal)
+                            |> andSearch goal (findProofS (Square (n-1)))
+
+                    else
+                        []
+
+                splitdiaSearch =
+                    if n > 1 then
+                        List.map (Tuple.mapFirst SplitDiaS) (findProofT (Tri n) goal)
+                            |> andSearch goal (findProofT (Tri (n-1)))
+
+                    else
+                        []
+
+                splitouterSearch =
+                    if n >= 3 then
+                        List.map (Tuple.mapFirst SplitOuterFrame) (findProofF (Frame n 1) goal)
+                            |> andSearch goal (findProofS (Square (n-2)))
+
+                    else
+                        []
+
+                splitinnerSearch =
+                    if n >= 3 then
+                        List.map (Tuple.mapFirst SplitInnerSquare) (findProofF (Frame n ((n-1)//2)) goal)
+                            |> andSearch goal (findProofS (Square (n-2*((n-1)//2))))
+
+                    else
+                        []
+
+                split4Search =
+                    if n>= 2 && modBy 2 n == 0 then
+                        let
+                            squareProofs =
+                                findProofS (Square (n//2))
+                        in
+                        List.map (Tuple.mapFirst Split4) (squareProofs goal)
+                            |> andSearch goal squareProofs
+                            |> andSearch goal squareProofs
+                            |> andSearch goal squareProofs
+
+                    else
+                        []
+            in
+            if List.member (SOp (Square n)) goal then
+                (Square n, [SOp (Square n)])::(lcutSearch++splitdiaSearch++splitouterSearch++splitinnerSearch++split4Search)
+            else
+                lcutSearch++splitdiaSearch++splitouterSearch++splitinnerSearch++split4Search
+
+        _ ->
+            []
+
+findProofR rotated rr goal =
+    case rr of
+        Rect n1 n2 ->
+            let
+                splitdiaSearch =
+                    if n1-n2 == 1 then
+                        let
+                            triProofs =
+                                findProofT (Tri n2)
+                        in
+                        List.map (Tuple.mapFirst SplitDiaR) (triProofs goal)
+                            |> andSearch goal triProofs
+
+                    else if n2-n1 == 1 then
+                        let
+                            triProofs =
+                                findProofT (Tri n1)
+                        in
+                        List.map (Tuple.mapFirst SplitDiaR) (triProofs goal)
+                            |> andSearch goal triProofs
+
+                    else
+                        []
+
+                splitsquareSearch =
+                    if n1 > n2 then
+                        List.map (Tuple.mapFirst SplitSquare) (findProofS (Square n2) goal)
+                            |> andSearch goal (findProofR False (Rect (n1-n2) n2))
+
+                    else if n2 > n1 then
+                        List.map (Tuple.mapFirst SplitSquare) (findProofS (Square n1) goal)
+                            |> andSearch goal (findProofR False (Rect n1 (n2-n1)))
+
+                    else
+                        []
+
+                tosquareSearch =
+                    if n1 == n2 then
+                        List.map (Tuple.mapFirst ToSquare) (findProofS (Square n1) goal)
+
+                    else
+                        []
+
+                rotateSearch =
+                    if not rotated then
+                        List.map (Tuple.mapFirst Rotate) (findProofR True (Rect n2 n1) goal)
+                    else
+                        []
+            in
+            if List.member (ROp (Rect n1 n2)) goal then
+                (Rect n1 n2, [ROp (Rect n1 n2)])::(splitdiaSearch++splitsquareSearch++rotateSearch++tosquareSearch)
+            else
+                splitdiaSearch++splitsquareSearch++rotateSearch++tosquareSearch
+
+        _ ->
+            []
+
+
+findProofT tt goal =
+    case tt of
+        Tri n ->
+            let
+                splittstSearch =
+                    if n > 1 then
+                        let
+                            triProofs =
+                                findProofT (Tri (n//2))
+                        in
+                        List.map (Tuple.mapFirst SplitTST) (triProofs goal)
+                            |> andSearch goal (findProofS (Square (n-n//2)))
+                            |> andSearch goal triProofs
+
+                    else
+                        []
+
+                lcutSearch =
+                    if n > 2 then
+                        List.map (Tuple.mapFirst LCutT) (findProofL (L n) goal)
+                            |> andSearch goal (findProofT (Tri (n-2)))
+
+                    else
+                        []
+
+                splitsideSearch =
+                    if n > 1 then
+                        List.map (Tuple.mapFirst SplitSide) (findProofR False (Rect 1 n) goal)
+                            |> andSearch goal (findProofT (Tri (n-1)))
+
+                    else
+                        []
+            in
+            if List.member (TOp (Tri n)) goal then
+                (Tri n, [TOp (Tri n)])::(splittstSearch++lcutSearch++splitsideSearch)
+            else
+                splittstSearch++lcutSearch++splitsideSearch
+
+        _ ->
+            []
+
+
+findProofF ff goal =
+    case ff of
+        Frame n1 n2 ->
+            let
+                splitframeSearch =
+                    if n1 > n2 then
+                        let
+                            rect1Proofs =
+                                findProofR False (Rect (n1-n2) n2)
+
+                            rect2Proofs =
+                                findProofR False (Rect n2 (n1-n2))
+                        in
+                        List.map (Tuple.mapFirst SplitFrame) (rect1Proofs goal)
+                            |> andSearch goal rect1Proofs
+                            |> andSearch goal rect2Proofs
+                            |> andSearch goal rect2Proofs
+                    else
+                        []
+            in
+            if List.member (FOp (Frame n1 n2)) goal then
+                (Frame n1 n2, [FOp (Frame n1 n2)])::splitframeSearch
+            else
+                splitframeSearch
+
+        _ ->
+            []
+
+
+findProofL ll goal =
+    case ll of
+        L n ->
+            let
+                splitendsSearch =
+                    if n > 1 then
+                        List.map (Tuple.mapFirst SplitEnds) (findProofR False (Rect 1 2) goal)
+                            |> andSearch goal (findProofL (L (n-1)))
+
+                    else
+                        []
+            in
+            if List.member (LOp (L n)) goal then
+                (L n, [LOp (L n)])::splitendsSearch
+            else
+                splitendsSearch
+
+        _ ->
+            []
+
+
+findProof : ProofTree -> List ProofTree -> Maybe ProofTree
+findProof start goal =
+    let
+        sGoal =
+            List.sortWith sortPt goal
+    in
+    case start of
+        SOp s ->
+            findProofS s sGoal
+                |> List.map (Tuple.mapFirst SOp)
+                |> List.filter (Tuple.second >> (==) sGoal)
+                |> List.head
+                |> Maybe.map Tuple.first
+
+        ROp r ->
+            findProofR False r sGoal
+                |> List.map (Tuple.mapFirst ROp)
+                |> List.filter (Tuple.second >> (==) sGoal)
+                |> List.head
+                |> Maybe.map Tuple.first
+
+        TOp t ->
+            findProofT t sGoal
+                |> List.map (Tuple.mapFirst TOp)
+                |> List.filter (Tuple.second >> (==) sGoal)
+                |> List.head
+                |> Maybe.map Tuple.first
+
+        FOp f ->
+            findProofF f sGoal
+                |> List.map (Tuple.mapFirst FOp)
+                |> List.filter (Tuple.second >> (==) sGoal)
+                |> List.head
+                |> Maybe.map Tuple.first
+
+        LOp l ->
+            findProofL l sGoal
+                |> List.map (Tuple.mapFirst LOp)
+                |> List.filter (Tuple.second >> (==) sGoal)
+                |> List.head
+                |> Maybe.map Tuple.first
+
+
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case model.stage of
-        Initialising i ->
+        Initialising i shapes ->
             case msg of
-                SetN n ->
-                    ({ model | stage = Initialising { i | n = n } }, Cmd.none)
+                SetN Nothing n ->
+                    ({ model | stage = Initialising { i | n = n } shapes }, Cmd.none)
 
-                SetShape shape ->
-                    ({ model | stage = Initialising { i | shape = shape } }, Cmd.none)
+                SetN (Just j) n ->
+                    ({ model | stage = Initialising i (List.Extra.updateAt j (\x -> { x | n = n }) shapes) }, Cmd.none)
 
-                SetP1 p1 ->
-                    ({ model | stage = Initialising { i | p1 = p1 } }, Cmd.none)
+                SetShape Nothing shape ->
+                    ({ model | stage = Initialising { i | shape = shape } shapes }, Cmd.none)
 
-                SetP2 p2 ->
-                    ({ model | stage = Initialising { i | p2 = p2 } }, Cmd.none)
+                SetShape (Just j) shape ->
+                    ({ model | stage = Initialising i (List.Extra.updateAt j (\x -> { x | shape = shape }) shapes) }, Cmd.none)
+
+                SetP1 Nothing p1 ->
+                    ({ model | stage = Initialising { i | p1 = p1 } shapes }, Cmd.none)
+
+                SetP1 (Just j) p1 ->
+                    ({ model | stage = Initialising i (List.Extra.updateAt j (\x -> { x | p1 = p1 }) shapes) }, Cmd.none)
+
+                SetP2 Nothing p2 ->
+                    ({ model | stage = Initialising { i | p2 = p2 } shapes }, Cmd.none)
+
+                SetP2 (Just j) p2 ->
+                    ({ model | stage = Initialising i (List.Extra.updateAt j (\x -> { x | p2 = p2 }) shapes) }, Cmd.none)
 
                 Next ->
-                    case (String.toInt i.n, (i.shape, String.toInt i.p1, String.toInt i.p2)) of
-                        ( Just n, ("square", Just p1, _)) ->
-                            ( { proofs = (n, (SOp (Square p1)))::model.proofs, stage = Proving { operation = "none" } }, Cmd.none )
+                    ( { proofs = (Maybe.withDefault [] (Maybe.map List.singleton (buildInitShape i)))++model.proofs, stage = Proving { operation = "none" } }, Cmd.none )
 
-                        ( Just n, ("rect", Just p1, Just p2)) ->
-                            ( { proofs = (n, ROp (Rect p1 p2))::model.proofs, stage = Proving { operation = "none" } }, Cmd.none )
+                AddShape ->
+                    ( { model | stage = Initialising i <| shapes++[ { n = "", shape = "square", p1 = "", p2 = "" } ] }, Cmd.none )
 
-                        ( Just n, ("tri", Just p1, _ )) ->
-                            ( { proofs = (n, TOp (Tri p1))::model.proofs, stage = Proving { operation = "none" } }, Cmd.none )
+                Delete j ->
+                    ( { model | stage = Initialising i (List.Extra.removeAt j shapes) }, Cmd.none )
 
-                        ( Just n, ("l", Just p1, _ )) ->
-                            ( { proofs = (n, LOp (L p1))::model.proofs, stage = Proving { operation = "none" } }, Cmd.none )
+                SearchProof ->
+                    let
+                        builtShapes =
+                            List.filterMap buildInitShape shapes
 
-                        ( Just n, ("frame", Just p1, Just p2)) ->
-                            ( { proofs = (n, FOp (Frame p1 p2))::model.proofs, stage = Proving { operation = "none" } }, Cmd.none )
+                        mgoal =
+                            if List.length builtShapes == List.length shapes then
+                                Just (List.concatMap (\(x, y) -> List.repeat x y) builtShapes)
+
+                            else
+                                Nothing
+                    in
+                    case (buildInitShape i, mgoal) of
+                        (Just (n, start), Just goal) ->
+                            case findProof start goal of
+                                Just pt ->
+                                    if List.length model.proofs >= 1 then
+                                        ( { proofs = (n, pt)::model.proofs, stage = DoneI { n = "", shape = "square", p1 = "", p2 = "" } }, Cmd.none )
+
+                                    else
+                                        ( { proofs = (n, pt)::model.proofs, stage = Initialising { n = "", shape = "square", p1 = "", p2 = ""} [] }, Cmd.none )
+
+                                Nothing ->
+                                    (model, Cmd.none)
 
                         _ ->
                             (model, Cmd.none)
+
                 _ ->
                     (model, Cmd.none)
 
@@ -2994,23 +3517,23 @@ update msg model =
                         --( {model | stage = Done <| Debug.log "" (Maybe.map2 infer (List.Extra.getAt 0 model.proofs) (List.Extra.getAt 1 model.proofs) |> Maybe.withDefault Nothing) }, Cmd.none )
                         ( { model | stage = DoneI { n = "", shape = "square", p1 = "", p2 = "" } }, Cmd.none )
                     else
-                        ( { model | stage = Initialising { n = "", shape = "square", p1 = "", p2 = "" } }, Cmd.none )
+                        ( { model | stage = Initialising { n = "", shape = "square", p1 = "", p2 = "" } [] }, Cmd.none )
 
                 _ ->
                     ( model, Cmd.none )
 
         DoneI i ->
             case msg of
-                SetN n ->
+                SetN Nothing n ->
                     ({ model | stage = DoneI { i | n = n } }, Cmd.none)
 
-                SetShape shape ->
+                SetShape Nothing shape ->
                     ({ model | stage = DoneI { i | shape = shape } }, Cmd.none)
 
-                SetP1 p1 ->
+                SetP1 Nothing p1 ->
                     ({ model | stage = DoneI { i | p1 = p1 } }, Cmd.none)
 
-                SetP2 p2 ->
+                SetP2 Nothing p2 ->
                     ({ model | stage = DoneI { i | p2 = p2 } }, Cmd.none)
 
                 Next ->
