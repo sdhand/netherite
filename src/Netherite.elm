@@ -5,16 +5,33 @@ import Generalise exposing (..)
 import Equation exposing (..)
 
 
-representations : IExpr -> List (Int -> List ProofTree)
+type Shape
+    = Dot
+    | Line IExpr
+    | Square IExpr
+    | Tri IExpr
+    | Rect IExpr IExpr
+    | Frame IExpr IExpr
+
+
+type alias Representation =
+    List Shape
+
+
+representations : IExpr -> List Representation
 representations expr =
     case expr of
-        Literal i ->
-            [ \n -> ROp <| Rect 1 i ]
+        Literal 1 ->
+            [ [ Dot ] ]
 
-        Var (VarName 'n') ->
-            [ \n -> ROp <| Rect 1 n ]
+        Literal i ->
+            [ [ Line (Literal i) ] ]
+
+        Var name ->
+            [ [ Line (Var name) ] ]
+
         Add e1 e2 ->
-            addRepr e1 e2 ++ addRepr e2 e1
+            List.concatMap (\i -> List.concatMap (addRepr i) (representations e1)) (representations e2)
 
         Mul e1 e2 ->
             mulRepr e1 e2 ++ mulRepr e2 e1
@@ -22,9 +39,23 @@ representations expr =
         _ ->
             []
 
-addRepr : IExpr -> IExpr -> List (Int -> List ProofTree)
-addRepr expr1 expr2 =
-    List.concatMap (\i -> List.map (\j n -> i n ++ j n) (representations expr1)) (representations expr2)
+addRepr : Representation -> Representation -> List Representation
+addRepr r1 r2 =
+    case (r1, r2) of
+        ( [ Dot ], [ Dot ]) ->
+            [ [ Line (Literal 2) ], r1 ++ r2 ]
+
+        ( [ Dot ], [ Line e ]) ->
+            [ [ Line (Add (Literal 1) e) ], r1 ++ r2 ]
+
+        ([ Line e ], [ Dot ]) ->
+            [ [ Line (Add e (Literal 1)) ], r1 ++ r2 ]
+
+        ([ Line e1 ], [ Line e2 ]) ->
+            [ [ Line (Add e1 e2) ], r1 ++ r2 ]
+
+        _ ->
+            r1 ++ r2
 
 
 mulRepr : IExpr -> IExpr -> List (Int -> List ProofTree)
