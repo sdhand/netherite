@@ -28,7 +28,6 @@ type IExpr
     | Sub IExpr IExpr
     | Div IExpr IExpr
     | Pow IExpr IExpr
-    | Neg IExpr
     | Var VarName
     | Literal Int
     | Sum SumExpr
@@ -131,7 +130,7 @@ var_ =
 
 powTerm : Parser IExpr
 powTerm =
-    oneOf [ lexeme term |> andThen pow, neg ]
+    oneOf [ lexeme term |> andThen pow ]
 
 
 term : Parser IExpr
@@ -178,13 +177,6 @@ paren =
 pow : IExpr -> Parser IExpr
 pow t =
     oneOf [ succeed (Pow t) |. (symbol >> lexeme) "^" |= lexeme powTerm, succeed t ]
-
-
-neg : Parser IExpr
-neg =
-    succeed Neg
-        |. symbol "-"
-        |= lazy (\_ -> powTerm)
 
 
 literal : Parser IExpr

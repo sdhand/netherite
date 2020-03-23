@@ -8,6 +8,7 @@ import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
 import Arithmetic exposing (gcd, divisors, divides)
+import Netherite exposing (..)
 import Maybe.Extra
 import List.Extra
 
