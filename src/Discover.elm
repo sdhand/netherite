@@ -71,6 +71,8 @@ view model =
                     [ onClick Press ]
                     [ text "Show Proof" ]
                 , br [] []
+                , text ("Proof: "++(Debug.toString sp))
+                , br [] []
                 ]++(List.map (Html.map GenM) (case pt of
                     Just proof ->
                         drawShapes "" proof
