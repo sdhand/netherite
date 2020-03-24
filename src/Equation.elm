@@ -1,7 +1,8 @@
-module Equation exposing (parse, Equation, SumExpr, IExpr(..), VarName(..))
+module Equation exposing (parse, Equation, SumExpr, IExpr(..), VarName(..), Ctx, eval)
 
 
 import Parser exposing(..)
+import Dict exposing (Dict)
 import Set
 
 
@@ -35,6 +36,66 @@ type IExpr
     | Tri IExpr
 
 
+type alias Ctx =
+    Dict Char Int
+
+
+evalTri : Int -> Int
+evalTri n =
+    (n*(n+1))//2
+
+
+evalFib : Int -> Int
+evalFib n =
+    round ((((1.0+sqrt 5)/2)^(toFloat n))/(sqrt 5))
+
+
+eval : Ctx -> IExpr -> Maybe Int
+eval ctx exp =
+    case exp of
+        Add e1 e2 ->
+            Maybe.map2 (+) (eval ctx e1) (eval ctx e2)
+
+        Mul e1 e2 ->
+            Maybe.map2 (*) (eval ctx e1) (eval ctx e2)
+
+        Sub e1 e2 ->
+            Maybe.map2 (-) (eval ctx e1) (eval ctx e2)
+
+        Div e1 e2 ->
+            Maybe.map2 (//) (eval ctx e1) (eval ctx e2)
+
+        Pow e1 e2 ->
+            Maybe.map2 (^) (eval ctx e1) (eval ctx e2)
+
+        Var (VarName n) ->
+            Dict.get n ctx
+
+        Literal i ->
+            Just i
+
+        Sum { var, start, end, expr } ->
+            let
+                next val tot =
+                    case var of
+                        VarName n ->
+                            Maybe.map2 (+) tot (eval (Dict.insert n val ctx) expr)
+            in
+            case (eval ctx start, eval ctx end) of
+                (Just startV, Just endV) ->
+                    List.foldl next (Just 0) (List.range startV endV)
+
+                _ ->
+                    Nothing
+
+        Fib e ->
+            Maybe.map evalFib (eval ctx e)
+
+
+        Tri e ->
+            Maybe.map evalTri (eval ctx e)
+
+
 parse : String -> Result (List DeadEnd) Equation
 parse str =
     run (equation |. end) str
@@ -58,8 +119,8 @@ equation =
         |= lexeme (intExpr True)
 
 
-var : Parser VarName
-var =
+varName : Parser VarName
+varName =
     succeed VarName
         |= (
                 variable
@@ -125,7 +186,7 @@ mulExpr reverse =
 var_ : Parser IExpr
 var_ =
     succeed Var
-        |= var
+        |= varName
 
 
 powTerm : Parser IExpr
@@ -209,7 +270,7 @@ sum =
     |= (succeed SumExpr
         |. (keyword >> lexeme) "Sum"
         |. (symbol >> lexeme) "("
-        |= lexeme var
+        |= lexeme varName
         |. (symbol >> lexeme) ","
         |= lazy (\_ -> intExpr True)
         |. (symbol >> lexeme) ","

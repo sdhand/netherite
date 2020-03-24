@@ -9,8 +9,10 @@ import Html.Attributes exposing (..)
 import Html.Events exposing (..)
 import Arithmetic exposing (gcd, divisors, divides)
 import Netherite exposing (..)
+import Equation exposing (..)
 import Maybe.Extra
 import List.Extra
+import Dict
 
 
 type alias Occurances a =
@@ -221,6 +223,82 @@ unwrapL p =
             Just l
 
         _ ->
+            Nothing
+
+
+testShape : (Int -> Bool) -> ProofTree -> Bool
+testShape f pt =
+    case pt of
+        SOp (Square a) ->
+            f a
+
+        ROp (Rect a b) ->
+            f a && f b
+
+        TOp (Tri a) ->
+            f a
+
+        FOp (Frame a b) ->
+            f a && f b
+
+        LOp (L a) ->
+            f a
+
+        _ ->
+            True
+
+
+repr2Goal : Ctx -> Representation -> Maybe (List ProofTree)
+repr2Goal ctx r =
+    let
+        shapeR2Shape s =
+            case s of
+                DotR ->
+                    Just [ SOp <| Square 1 ]
+
+                SquareR e ->
+                    Maybe.map (\a -> [ SOp (Square a) ]) (eval ctx e)
+
+                LineR e ->
+                    Maybe.map (\a -> [ ROp (Rect 1 a) ]) (eval ctx e)
+
+                TriR e ->
+                    Maybe.map (\a -> [ TOp (Tri a) ]) (eval ctx e)
+
+                RectR e1 e2 ->
+                    Maybe.map2 (\a b -> [ ROp (Rect a b) ]) (eval ctx e1) (eval ctx e2)
+
+                SumR { var, start, end, repr } ->
+                    case (eval ctx start, eval ctx end, var) of
+                        (Just startVal, Just endVal, VarName n) ->
+                            List.map (\val -> repr2Goal (Dict.insert n val ctx) repr) (List.range startVal endVal)
+                                |> List.foldl (\a b -> Maybe.andThen (\aa -> Maybe.map ((++) aa) b) a) (Just [])
+
+                        _ ->
+                            Nothing
+
+                RepeatRp e repr ->
+                    case eval ctx e of
+                        Just repeatNo ->
+                            Maybe.map (List.repeat repeatNo >> List.concat) (repr2Goal ctx repr)
+
+                        Nothing ->
+                            Nothing
+
+        possibleGoal =
+            List.map shapeR2Shape r
+                |> List.foldl (\a b -> Maybe.andThen (\aa -> Maybe.map ((++) aa) b) a) (Just [])
+                |> Maybe.map (List.filter (testShape ((/=) 0)))
+    in
+    case possibleGoal of
+        Just goal ->
+            if List.all (testShape ((<) 0)) goal then
+                Just goal
+
+            else
+                Nothing
+
+        Nothing ->
             Nothing
 
 
@@ -3175,6 +3253,25 @@ diffPt big small =
                     diffPt t1 t2
 
 
+normalizeG : ProofTree -> ProofTree
+normalizeG pt =
+    case pt of
+        ROp (Rect 1 1) ->
+            SOp (Square 1)
+
+        TOp (Tri 1) ->
+            SOp (Square 1)
+
+        FOp (Frame 1 1) ->
+            SOp (Square 1)
+
+        LOp (L 1) ->
+            SOp (Square 1)
+
+        _ ->
+            pt
+
+
 andSearch goal next =
     List.concatMap (\(x, y) -> List.map (Tuple.mapBoth x (merge y)) (next (diffPt goal y))) >> filterGoal goal
 
@@ -3286,9 +3383,15 @@ findProofR rotated rr goal =
                         List.map (Tuple.mapFirst Rotate) (findProofR True (Rect n2 n1) goal)
                     else
                         []
+
+                shape =
+                    if n1 == 1 && n2 == 1 then
+                        SOp (Square 1)
+                    else
+                        ROp rr
             in
-            if List.member (ROp (Rect n1 n2)) goal then
-                (Rect n1 n2, [ROp (Rect n1 n2)])::(splitdiaSearch++splitsquareSearch++rotateSearch++tosquareSearch)
+            if List.member shape goal then
+                (Rect n1 n2, [shape])::(splitdiaSearch++splitsquareSearch++rotateSearch++tosquareSearch)
             else
                 splitdiaSearch++splitsquareSearch++rotateSearch++tosquareSearch
 
@@ -3328,9 +3431,15 @@ findProofT tt goal =
 
                     else
                         []
+
+                shape =
+                    if n == 1 then
+                        SOp (Square 1)
+                    else
+                        TOp tt
             in
-            if List.member (TOp (Tri n)) goal then
-                (Tri n, [TOp (Tri n)])::(splittstSearch++lcutSearch++splitsideSearch)
+            if List.member shape goal then
+                (Tri n, [shape])::(splittstSearch++lcutSearch++splitsideSearch)
             else
                 splittstSearch++lcutSearch++splitsideSearch
 
@@ -3357,9 +3466,15 @@ findProofF ff goal =
                             |> andSearch goal rect2Proofs
                     else
                         []
+
+                shape =
+                    if n1 == 1 && n2 == 1 then
+                        SOp (Square 1)
+                    else
+                        FOp ff
             in
-            if List.member (FOp (Frame n1 n2)) goal then
-                (Frame n1 n2, [FOp (Frame n1 n2)])::splitframeSearch
+            if List.member shape goal then
+                (Frame n1 n2, [shape])::splitframeSearch
             else
                 splitframeSearch
 
@@ -3378,9 +3493,15 @@ findProofL ll goal =
 
                     else
                         []
+
+                shape =
+                    if n == 1 then
+                        SOp (Square 1)
+                    else
+                        LOp ll
             in
-            if List.member (LOp (L n)) goal then
-                (L n, [LOp (L n)])::splitendsSearch
+            if List.member shape goal then
+                (L n, [shape])::splitendsSearch
             else
                 splitendsSearch
 
@@ -3392,7 +3513,8 @@ findProof : ProofTree -> List ProofTree -> Maybe ProofTree
 findProof start goal =
     let
         sGoal =
-            List.sortWith sortPt goal
+            List.map normalizeG goal
+                |> List.sortWith sortPt
     in
     case start of
         SOp s ->

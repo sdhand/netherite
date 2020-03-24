@@ -6,13 +6,13 @@ import List.Extra
 
 
 type Shape
-    = Dot
-    | Line IExpr
-    | Square IExpr
+    = DotR
+    | LineR IExpr
+    | SquareR IExpr
     | TriR IExpr
-    | Rect IExpr IExpr
+    | RectR IExpr IExpr
     | SumR { var : VarName, start : IExpr, end : IExpr, repr : Representation }
-    | Repeat IExpr Representation
+    | RepeatRp IExpr Representation
 
 
 evalRepr : Representation -> IExpr
@@ -20,25 +20,25 @@ evalRepr re =
     let
         toExpr r =
             case r of
-                Dot ->
+                DotR ->
                     Literal 1
 
-                Line e ->
+                LineR e ->
                     e
 
-                Square e ->
+                SquareR e ->
                     Pow e (Literal 2)
 
                 TriR e ->
                     Tri e
 
-                Rect e1 e2 ->
+                RectR e1 e2 ->
                     Mul e1 e2
 
                 SumR { var, start, end, repr } ->
                     Sum { var = var, start = start, end = end, expr = evalRepr repr }
 
-                Repeat e repr ->
+                RepeatRp e repr ->
                     Mul e (evalRepr repr)
     in
     List.map toExpr re
@@ -49,13 +49,13 @@ evalRepr re =
 isLineR : Shape -> Bool
 isLineR s =
     case s of
-        Line _ ->
+        LineR _ ->
             True
 
         SumR _ ->
             True
 
-        Repeat _ _ ->
+        RepeatRp _ _ ->
             True
 
         _ ->
@@ -65,16 +65,16 @@ isLineR s =
 doSub : IExpr -> (Representation, Representation) -> List Representation
 doSub subE (r1, r2) =
     case r1 of
-        ((Line e)::xs) ->
-            ((Line (Sub e subE))::(xs++r2))::(doSub subE (xs, (Line e)::r2))
+        ((LineR e)::xs) ->
+            ((LineR (Sub e subE))::(xs++r2))::(doSub subE (xs, (LineR e)::r2))
 
         ((SumR sr)::xs) ->
             List.map (\r -> (SumR { sr | end = Sub sr.end (Literal 1) })::(r++xs++r2)) (doSub subE (List.partition isLineR sr.repr))
                 ++ doSub subE (xs, (SumR sr)::r2)
 
-        ((Repeat e rr)::xs) ->
-            List.map (\r -> (Repeat (Sub e (Literal 1)) rr)::(r++xs++r2)) (doSub subE (List.partition isLineR rr))
-                ++ doSub subE (xs, (Repeat e rr)::r2)
+        ((RepeatRp e rr)::xs) ->
+            List.map (\r -> (RepeatRp (Sub e (Literal 1)) rr)::(r++xs++r2)) (doSub subE (List.partition isLineR rr))
+                ++ doSub subE (xs, (RepeatRp e rr)::r2)
 
         (x::xs) ->
             doSub subE (xs, x::r2)
@@ -103,24 +103,24 @@ representations : IExpr -> List Representation
 representations expr =
     case expr of
         Literal 1 ->
-            [ [ Dot ] ]
+            [ [ DotR ] ]
 
         Literal i ->
-            [ [ Line (Literal i) ] ]
+            [ [ LineR (Literal i) ] ]
 
         Var name ->
-            [ [ Line (Var name) ] ]
+            [ [ LineR (Var name) ] ]
 
         Add e1 e2 ->
             List.concatMap (\i -> List.concatMap (addRepr i) (representations e1)) (representations e2)
 
         Mul e1 e2 ->
-            List.map (\r -> [ Repeat e1 r ]) (representations e2)
-                ++ List.map (\r -> [ Repeat e2 r ]) (representations e1)
+            List.map (\r -> [ RepeatRp e1 r ]) (representations e2)
+                ++ List.map (\r -> [ RepeatRp e2 r ]) (representations e1)
                 ++ List.concatMap (\i -> List.concatMap (mulRepr i) (representations e1)) (representations e2)
 
         Sub e1 e2 ->
-            List.concatMap (\i -> List.concatMap (subRepr i) (representations e1)) (representations e2)
+            List.concatMap (\i -> List.concatMap (subRepr i) (representations e2)) (representations e1)
 
         Div e (Literal 1) ->
             representations e
@@ -132,13 +132,13 @@ representations expr =
             representations e
 
         Pow e (Literal 2) ->
-            [ [ Square e ] ]
+            [ [ SquareR e ] ]
 
         Sum ({ var, start, end } as sumExpr) ->
             List.map (\r -> [ SumR { var = var, start = start, end = end, repr = r } ] ) (representations sumExpr.expr)
 
         Fib e ->
-            [ [ Line (Fib e) ] ]
+            [ [ LineR (Fib e) ] ]
 
         Tri e ->
             [ [ TriR e ] ]
@@ -149,17 +149,17 @@ representations expr =
 addRepr : Representation -> Representation -> List Representation
 addRepr r1 r2 =
     case (r1, r2) of
-        ( [ Dot ], [ Dot ]) ->
-            [ [ Line (Literal 2) ], r1 ++ r2 ]
+        ( [ DotR ], [ DotR ]) ->
+            [ [ LineR (Literal 2) ], r1 ++ r2 ]
 
-        ( [ Dot ], [ Line e ]) ->
-            [ [ Line (Add (Literal 1) e) ], r1 ++ r2 ]
+        ( [ DotR ], [ LineR e ]) ->
+            [ [ LineR (Add (Literal 1) e) ], r1 ++ r2 ]
 
-        ([ Line e ], [ Dot ]) ->
-            [ [ Line (Add e (Literal 1)) ], r1 ++ r2 ]
+        ([ LineR e ], [ DotR ]) ->
+            [ [ LineR (Add e (Literal 1)) ], r1 ++ r2 ]
 
-        ([ Line e1 ], [ Line e2 ]) ->
-            [ [ Line (Add e1 e2) ], r1 ++ r2 ]
+        ([ LineR e1 ], [ LineR e2 ]) ->
+            [ [ LineR (Add e1 e2) ], r1 ++ r2 ]
 
         _ ->
             [ r1 ++ r2 ]
@@ -174,10 +174,10 @@ subRepr r1 r2 =
                 |> Maybe.withDefault []
     in
     case (r1, r2) of
-        (_, [ Dot ]) ->
+        (_, [ DotR ]) ->
             doSub (Literal 1) (List.partition isLineR r1) ++ default
 
-        (_, [ Line e ]) ->
+        (_, [ LineR e ]) ->
             doSub e (List.partition isLineR r1) ++ default
 
         _ ->
@@ -187,37 +187,37 @@ subRepr r1 r2 =
 div2Repr : Representation -> Maybe Representation
 div2Repr repr =
     case repr of
-        [ Rect (Add e1 (Literal 1)) e2 ] ->
+        [ RectR (Add e1 (Literal 1)) e2 ] ->
             if e1 == e2 then
                 Just [ TriR e1 ]
             else
                 Nothing
 
-        [ Rect (Add (Literal 1) e1) e2 ] ->
+        [ RectR (Add (Literal 1) e1) e2 ] ->
             if e1 == e2 then
                 Just [ TriR e1 ]
             else
                 Nothing
 
-        [ Rect e1 (Add e2 (Literal 1)) ] ->
+        [ RectR e1 (Add e2 (Literal 1)) ] ->
             if e1 == e2 then
                 Just [ TriR e1 ]
             else
                 Nothing
 
-        [ Rect e1 (Add (Literal 1) e2) ] ->
+        [ RectR e1 (Add (Literal 1) e2) ] ->
             if e1 == e2 then
                 Just [ TriR e1 ]
             else
                 Nothing
 
-        [ Rect (Sub e1 (Literal 1)) e2 ] ->
+        [ RectR (Sub e1 (Literal 1)) e2 ] ->
             if e1 == e2 then
                 Just [ TriR (Sub e1 (Literal 1)) ]
             else
                 Nothing
 
-        [ Rect e1 (Sub e2 (Literal 1)) ] ->
+        [ RectR e1 (Sub e2 (Literal 1)) ] ->
             if e1 == e2 then
                 Just [ TriR (Sub e2 (Literal 1)) ]
             else
@@ -230,14 +230,14 @@ div2Repr repr =
 mulRepr : Representation -> Representation -> List Representation
 mulRepr r1 r2 =
     case (r1, r2) of
-        ( [ Dot ], _) ->
+        ( [ DotR ], _) ->
             [ r2 ]
 
-        (_, [ Dot ]) ->
+        (_, [ DotR ]) ->
             [ r1 ]
 
-        ( [ Line e1 ], [ Line e2 ] ) ->
-            [ [ Rect e1 e2 ] ]
+        ( [ LineR e1 ], [ LineR e2 ] ) ->
+            [ [ RectR e1 e2 ] ]
 
         (_, _) ->
             []
