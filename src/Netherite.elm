@@ -3,6 +3,7 @@ module Netherite exposing (Shape(..), Representation, representations)
 
 import Equation exposing (..)
 import List.Extra
+import Maybe.Extra
 
 
 type Shape
@@ -62,25 +63,23 @@ isLineR s =
             False
 
 
-doSub : IExpr -> (Representation, Representation) -> List Representation
+doSub : IExpr -> (Representation, Representation) -> Maybe Representation
 doSub subE (r1, r2) =
     case r1 of
         ((LineR e)::xs) ->
-            ((LineR (Sub e subE))::(xs++r2))::(doSub subE (xs, (LineR e)::r2))
+            Just ((LineR (Sub e subE))::(xs++r2))
 
         ((SumR sr)::xs) ->
-            List.map (\r -> (SumR { sr | end = Sub sr.end (Literal 1) })::(r++xs++r2)) (doSub subE (List.partition isLineR sr.repr))
-                ++ doSub subE (xs, (SumR sr)::r2)
+            Maybe.map (\r -> (SumR { sr | end = Sub sr.end (Literal 1) })::(r++xs++r2)) (doSub subE (List.partition isLineR sr.repr))
 
         ((RepeatRp e rr)::xs) ->
-            List.map (\r -> (RepeatRp (Sub e (Literal 1)) rr)::(r++xs++r2)) (doSub subE (List.partition isLineR rr))
-                ++ doSub subE (xs, (RepeatRp e rr)::r2)
+            Maybe.map (\r -> (RepeatRp (Sub e (Literal 1)) rr)::(r++xs++r2)) (doSub subE (List.partition isLineR rr))
 
         (x::xs) ->
             doSub subE (xs, x::r2)
 
         [] ->
-            []
+            Nothing
 
 
 subtractList l1 l2 =
@@ -175,10 +174,10 @@ subRepr r1 r2 =
     in
     case (r1, r2) of
         (_, [ DotR ]) ->
-            doSub (Literal 1) (List.partition isLineR r1) ++ default
+            Maybe.Extra.toList (doSub (Literal 1) (List.partition isLineR r1)) ++ default
 
         (_, [ LineR e ]) ->
-            doSub e (List.partition isLineR r1) ++ default
+            Maybe.Extra.toList (doSub e (List.partition isLineR r1)) ++ default
 
         _ ->
             default
@@ -227,6 +226,18 @@ div2Repr repr =
             Nothing
 
 
+simpleExpr e =
+    case e of
+        Var _ ->
+            True
+
+        Literal _ ->
+            True
+
+        _ ->
+            False
+
+
 mulRepr : Representation -> Representation -> List Representation
 mulRepr r1 r2 =
     case (r1, r2) of
@@ -237,7 +248,7 @@ mulRepr r1 r2 =
             [ r1 ]
 
         ( [ LineR e1 ], [ LineR e2 ] ) ->
-            [ [ RectR e1 e2 ] ]
+            [ [ RectR e1 e2 ], [ LineR (Mul e1 e2) ] ]
 
         (_, _) ->
             []

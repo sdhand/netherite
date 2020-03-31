@@ -688,6 +688,12 @@ rEq r1 r2 =
         (SplitDiaR t11 t12, SplitDiaR t21 t22) ->
             tEq t11 t21 && tEq t12 t22
 
+        (Rotate rr1, Rotate rr2) ->
+            rEq rr1 rr2
+
+        (ToSquare s1, ToSquare s2) ->
+            sEq s1 s2
+
         _ ->
             False
 
@@ -2737,6 +2743,9 @@ tryStepCase (stepN, baseN) (step, base) =
 
 infer : (Int, ProofTree) -> (Int, ProofTree) -> Maybe SchematicProof
 infer (n1, p1) (n2, p2) =
+    if ptEq p1 p2 then
+        Just { step = p1, base = SOp (Square 0) }
+    else
     let
         (largeN, largeP) =
             if n1 > n2 then
@@ -3022,50 +3031,96 @@ evaluateProofL m shape step schematic =
             Nothing
 
 
-{- reachable : ProofTree -> ProofTree -> Bool
+reachable : ProofTree -> ProofTree -> Bool
 reachable shape1 shape2 =
     case (shape1, shape2) of
+        (_, SOp (Square 1)) ->
+            True
+
+        (_, ROp (Rect 1 1)) ->
+            True
+
+        (_, TOp (Tri 1)) ->
+            True
+
+        (_, FOp (Frame 1 1)) ->
+            True
+
+        (_, LOp (L 1)) ->
+            True
+
         (SOp (Square a), SOp (Square c)) ->
-            a >= c
+            a > c
 
         (SOp (Square a), ROp (Rect c d)) ->
-             (a - (a-1)//2 >= c && (a-1)//2 >= d) || ((a-1)//2 >= c && a - (a-1)//2 >= d)
+            a >= c && a >= d
+            --(c == 1 && a >= d) || (a >= c && d == 1) || ((a-(a-1)//2) >= c && (a-1)//2 >= d) || ((a-(a-1)//2) >= d && (a-1)//2 >= c)
 
         (SOp (Square a), TOp (Tri c)) ->
             a >= c
 
         (SOp (Square a), FOp (Frame c d)) ->
-            a >= c
+            a >= c && (d == 1 || (a-1)//2 >= d)
 
         (SOp (Square a), LOp (L c)) ->
             a >= c
 
         (ROp (Rect a b), SOp (Square c)) ->
-            a >= c && b >= c
+            Basics.min a b >= c
 
         (ROp (Rect a b), ROp (Rect c d)) ->
             (a >= c && b >= d) || (a >= d && b >= c)
+            --(a == d && b == c) || reachable (SOp (Square (Basics.min a b))) shape2
 
         (ROp (Rect a b), TOp (Tri c)) ->
-            a >= c || b >= c
+            Basics.min a b >= c
 
         (ROp (Rect a b), FOp (Frame c d)) ->
-            a >= c && b >= c
+            Basics.min a b >= c && (d == 1 || ((Basics.min a b)-1)//2 >= d)
 
         (ROp (Rect a b), LOp (L c)) ->
-            a >= c && b >= c
+            Basics.min a b >= c
 
         (TOp (Tri a), SOp (Square c)) ->
             a-(a//2) >= c
 
-        (TOp (Tri a_), ROp (Rect c d)) ->
-            let
-                a =
-                    a_-(a_//2)
-            in
-            (a - (a-1)//2 >= c && (a-1)//2 >= d) || ((a-1)//2 >= c && a - (a-1)//2 >= d) || (c == 1 && a_ >= d) || (d == 1 && a_ >= c)
+        (TOp (Tri a), ROp (Rect c d)) ->
+            a >= c && a >= d
+            --(c == 1 && a >= d) || (d == 1 && a >= c) || reachable (SOp (Square (a-(a//2)))) shape2
 
-        (TOp-}
+        (TOp (Tri a), TOp (Tri c)) ->
+            a > c
+
+        (TOp (Tri a), FOp (Frame c d)) ->
+            a-a//2 >= c && (d == 1 || (a-a//2-1)//2 >= d)
+
+        (TOp (Tri a), LOp (L c)) ->
+            a >= c
+
+        (FOp (Frame a b), SOp (Square c)) ->
+            Basics.min (a-b) b >= c
+
+        (FOp (Frame a b), ROp (Rect c d)) ->
+            a >= c && a >= d
+             --(c == a-b && d == b) || (d == a-b && c == b) || reachable (SOp (Square (Basics.min (a-b) b))) shape2
+
+        (FOp (Frame a b), TOp (Tri c)) ->
+            Basics.min (a-b) b >= c
+
+        (FOp (Frame a b), FOp (Frame c d)) ->
+            reachable (ROp (Rect (a-b) b)) shape2
+
+        (FOp (Frame a b), LOp (L c)) ->
+            Basics.min (a-b) b >= c
+
+        (LOp (L a), ROp (Rect c d)) ->
+            (c == 1 && d == 2) || (d == 1 && c == 2)
+
+        (LOp (L a), LOp (L c)) ->
+            a > c
+
+        _ ->
+            False
 
 
 evaluateProof n start ({ step, base } as schematic) =
@@ -3090,11 +3145,8 @@ evaluateProof n start ({ step, base } as schematic) =
                 _ ->
                     Nothing
         in
-        if n == 1 then
-            evalP base
-
-        else
-            Maybe.andThen evalP (buildRepeat n step)
+        Maybe.andThen evalP (buildRepeat n step)
+            |> ifFailed (evalP base)
 
 
 buildInitShape : { n : String, shape : String, p1 : String, p2 : String } -> Maybe (Int, ProofTree)
@@ -3280,57 +3332,60 @@ findProofS : SquareOp -> List ProofTree -> List (SquareOp, List ProofTree)
 findProofS ss goal =
     case ss of
         Square n ->
-            let
-                lcutSearch =
-                    if n > 1 then
-                        List.map (Tuple.mapFirst LCutS) (findProofL (L n) goal)
-                            |> andSearch goal (findProofS (Square (n-1)))
+            if List.all (reachable (SOp ss)) goal then
+                let
+                    lcutSearch =
+                        if n > 1 then
+                            List.map (Tuple.mapFirst LCutS) (findProofL (L n) goal)
+                                |> andSearch goal (findProofS (Square (n-1)))
 
-                    else
-                        []
+                        else
+                            []
 
-                splitdiaSearch =
-                    if n > 1 then
-                        List.map (Tuple.mapFirst SplitDiaS) (findProofT (Tri n) goal)
-                            |> andSearch goal (findProofT (Tri (n-1)))
+                    splitdiaSearch =
+                        if n > 1 then
+                            List.map (Tuple.mapFirst SplitDiaS) (findProofT (Tri n) goal)
+                                |> andSearch goal (findProofT (Tri (n-1)))
 
-                    else
-                        []
+                        else
+                            []
 
-                splitouterSearch =
-                    if n >= 3 then
-                        List.map (Tuple.mapFirst SplitOuterFrame) (findProofF (Frame n 1) goal)
-                            |> andSearch goal (findProofS (Square (n-2)))
+                    splitouterSearch =
+                        if n >= 3 then
+                            List.map (Tuple.mapFirst SplitOuterFrame) (findProofF (Frame n 1) goal)
+                                |> andSearch goal (findProofS (Square (n-2)))
 
-                    else
-                        []
+                        else
+                            []
 
-                splitinnerSearch =
-                    if n >= 3 then
-                        List.map (Tuple.mapFirst SplitInnerSquare) (findProofF (Frame n ((n-1)//2)) goal)
-                            |> andSearch goal (findProofS (Square (n-2*((n-1)//2))))
+                    splitinnerSearch =
+                        if n >= 3 then
+                            List.map (Tuple.mapFirst SplitInnerSquare) (findProofF (Frame n ((n-1)//2)) goal)
+                                |> andSearch goal (findProofS (Square (n-2*((n-1)//2))))
 
-                    else
-                        []
+                        else
+                            []
 
-                split4Search =
-                    if n>= 2 && modBy 2 n == 0 then
-                        let
-                            squareProofs =
-                                findProofS (Square (n//2))
-                        in
-                        List.map (Tuple.mapFirst Split4) (squareProofs goal)
-                            |> andSearch goal squareProofs
-                            |> andSearch goal squareProofs
-                            |> andSearch goal squareProofs
+                    split4Search =
+                        if n>= 2 && modBy 2 n == 0 then
+                            let
+                                squareProofs =
+                                    findProofS (Square (n//2))
+                            in
+                            List.map (Tuple.mapFirst Split4) (squareProofs goal)
+                                |> andSearch goal squareProofs
+                                |> andSearch goal squareProofs
+                                |> andSearch goal squareProofs
 
-                    else
-                        []
-            in
-            if List.member (SOp (Square n)) goal then
-                (Square n, [SOp (Square n)])::(lcutSearch++splitdiaSearch++splitouterSearch++splitinnerSearch++split4Search)
+                        else
+                            []
+                in
+                if List.member (SOp (Square n)) goal then
+                    (Square n, [SOp (Square n)])::(lcutSearch++splitdiaSearch++splitouterSearch++splitinnerSearch++split4Search)
+                else
+                    lcutSearch++splitdiaSearch++splitouterSearch++splitinnerSearch++split4Search
             else
-                lcutSearch++splitdiaSearch++splitouterSearch++splitinnerSearch++split4Search
+                []
 
         _ ->
             []
@@ -3338,62 +3393,65 @@ findProofS ss goal =
 findProofR rotated rr goal =
     case rr of
         Rect n1 n2 ->
-            let
-                splitdiaSearch =
-                    if n1-n2 == 1 then
-                        let
-                            triProofs =
-                                findProofT (Tri n2)
-                        in
-                        List.map (Tuple.mapFirst SplitDiaR) (triProofs goal)
-                            |> andSearch goal triProofs
+            if List.all (reachable (ROp rr)) goal then
+                let
+                    splitdiaSearch =
+                        if n1-n2 == 1 then
+                            let
+                                triProofs =
+                                    findProofT (Tri n2)
+                            in
+                            List.map (Tuple.mapFirst SplitDiaR) (triProofs goal)
+                                |> andSearch goal triProofs
 
-                    else if n2-n1 == 1 then
-                        let
-                            triProofs =
-                                findProofT (Tri n1)
-                        in
-                        List.map (Tuple.mapFirst SplitDiaR) (triProofs goal)
-                            |> andSearch goal triProofs
+                        else if n2-n1 == 1 then
+                            let
+                                triProofs =
+                                    findProofT (Tri n1)
+                            in
+                            List.map (Tuple.mapFirst SplitDiaR) (triProofs goal)
+                                |> andSearch goal triProofs
 
-                    else
-                        []
+                        else
+                            []
 
-                splitsquareSearch =
-                    if n1 > n2 then
-                        List.map (Tuple.mapFirst SplitSquare) (findProofS (Square n2) goal)
-                            |> andSearch goal (findProofR False (Rect (n1-n2) n2))
+                    splitsquareSearch =
+                        if n1 > n2 then
+                            List.map (Tuple.mapFirst SplitSquare) (findProofS (Square n2) goal)
+                                |> andSearch goal (findProofR False (Rect (n1-n2) n2))
 
-                    else if n2 > n1 then
-                        List.map (Tuple.mapFirst SplitSquare) (findProofS (Square n1) goal)
-                            |> andSearch goal (findProofR False (Rect n1 (n2-n1)))
+                        else if n2 > n1 then
+                            List.map (Tuple.mapFirst SplitSquare) (findProofS (Square n1) goal)
+                                |> andSearch goal (findProofR False (Rect n1 (n2-n1)))
 
-                    else
-                        []
+                        else
+                            []
 
-                tosquareSearch =
-                    if n1 == n2 then
-                        List.map (Tuple.mapFirst ToSquare) (findProofS (Square n1) goal)
+                    tosquareSearch =
+                        if n1 == n2 then
+                            List.map (Tuple.mapFirst ToSquare) (findProofS (Square n1) goal)
 
-                    else
-                        []
+                        else
+                            []
 
-                rotateSearch =
-                    if not rotated then
-                        List.map (Tuple.mapFirst Rotate) (findProofR True (Rect n2 n1) goal)
-                    else
-                        []
+                    rotateSearch =
+                        if not rotated then
+                            List.map (Tuple.mapFirst Rotate) (findProofR True (Rect n2 n1) goal)
+                        else
+                            []
 
-                shape =
-                    if n1 == 1 && n2 == 1 then
-                        SOp (Square 1)
-                    else
-                        ROp rr
-            in
-            if List.member shape goal then
-                (Rect n1 n2, [shape])::(splitdiaSearch++splitsquareSearch++rotateSearch++tosquareSearch)
+                    shape =
+                        if n1 == 1 && n2 == 1 then
+                            SOp (Square 1)
+                        else
+                            ROp rr
+                in
+                if List.member shape goal then
+                    (Rect n1 n2, [shape])::(splitdiaSearch++splitsquareSearch++rotateSearch++tosquareSearch)
+                else
+                    splitsquareSearch++splitdiaSearch++rotateSearch++tosquareSearch
             else
-                splitdiaSearch++splitsquareSearch++rotateSearch++tosquareSearch
+                []
 
         _ ->
             []
@@ -3402,46 +3460,49 @@ findProofR rotated rr goal =
 findProofT tt goal =
     case tt of
         Tri n ->
-            let
-                splittstSearch =
-                    if n > 1 then
-                        let
-                            triProofs =
-                                findProofT (Tri (n//2))
-                        in
-                        List.map (Tuple.mapFirst SplitTST) (triProofs goal)
-                            |> andSearch goal (findProofS (Square (n-n//2)))
-                            |> andSearch goal triProofs
+            if List.all (reachable (TOp tt)) goal then
+                let
+                    splittstSearch =
+                        if n > 1 then
+                            let
+                                triProofs =
+                                    findProofT (Tri (n//2))
+                            in
+                            List.map (Tuple.mapFirst SplitTST) (triProofs goal)
+                                |> andSearch goal (findProofS (Square (n-n//2)))
+                                |> andSearch goal triProofs
 
-                    else
-                        []
+                        else
+                            []
 
-                lcutSearch =
-                    if n > 2 then
-                        List.map (Tuple.mapFirst LCutT) (findProofL (L n) goal)
-                            |> andSearch goal (findProofT (Tri (n-2)))
+                    lcutSearch =
+                        if n > 2 then
+                            List.map (Tuple.mapFirst LCutT) (findProofL (L n) goal)
+                                |> andSearch goal (findProofT (Tri (n-2)))
 
-                    else
-                        []
+                        else
+                            []
 
-                splitsideSearch =
-                    if n > 1 then
-                        List.map (Tuple.mapFirst SplitSide) (findProofR False (Rect 1 n) goal)
-                            |> andSearch goal (findProofT (Tri (n-1)))
+                    splitsideSearch =
+                        if n > 1 then
+                            List.map (Tuple.mapFirst SplitSide) (findProofR False (Rect 1 n) goal)
+                                |> andSearch goal (findProofT (Tri (n-1)))
 
-                    else
-                        []
+                        else
+                            []
 
-                shape =
-                    if n == 1 then
-                        SOp (Square 1)
-                    else
-                        TOp tt
-            in
-            if List.member shape goal then
-                (Tri n, [shape])::(splittstSearch++lcutSearch++splitsideSearch)
+                    shape =
+                        if n == 1 then
+                            SOp (Square 1)
+                        else
+                            TOp tt
+                in
+                if List.member shape goal then
+                    (Tri n, [shape])::(splittstSearch++lcutSearch++splitsideSearch)
+                else
+                    splittstSearch++lcutSearch++splitsideSearch
             else
-                splittstSearch++lcutSearch++splitsideSearch
+                []
 
         _ ->
             []
@@ -3450,33 +3511,36 @@ findProofT tt goal =
 findProofF ff goal =
     case ff of
         Frame n1 n2 ->
-            let
-                splitframeSearch =
-                    if n1 > n2 then
-                        let
-                            rect1Proofs =
-                                findProofR False (Rect (n1-n2) n2)
+            if List.all (reachable (FOp ff)) goal then
+                let
+                    splitframeSearch =
+                        if n1 > n2 then
+                            let
+                                rect1Proofs =
+                                    findProofR False (Rect (n1-n2) n2)
 
-                            rect2Proofs =
-                                findProofR False (Rect n2 (n1-n2))
-                        in
-                        List.map (Tuple.mapFirst SplitFrame) (rect1Proofs goal)
-                            |> andSearch goal rect1Proofs
-                            |> andSearch goal rect2Proofs
-                            |> andSearch goal rect2Proofs
-                    else
-                        []
+                                rect2Proofs =
+                                    findProofR False (Rect n2 (n1-n2))
+                            in
+                            List.map (Tuple.mapFirst SplitFrame) (rect1Proofs goal)
+                                |> andSearch goal rect1Proofs
+                                |> andSearch goal rect2Proofs
+                                |> andSearch goal rect2Proofs
+                        else
+                            []
 
-                shape =
-                    if n1 == 1 && n2 == 1 then
-                        SOp (Square 1)
-                    else
-                        FOp ff
-            in
-            if List.member shape goal then
-                (Frame n1 n2, [shape])::splitframeSearch
+                    shape =
+                        if n1 == 1 && n2 == 1 then
+                            SOp (Square 1)
+                        else
+                            FOp ff
+                in
+                if List.member shape goal then
+                    (Frame n1 n2, [shape])::splitframeSearch
+                else
+                    splitframeSearch
             else
-                splitframeSearch
+                []
 
         _ ->
             []
@@ -3485,25 +3549,28 @@ findProofF ff goal =
 findProofL ll goal =
     case ll of
         L n ->
-            let
-                splitendsSearch =
-                    if n > 1 then
-                        List.map (Tuple.mapFirst SplitEnds) (findProofR False (Rect 1 2) goal)
-                            |> andSearch goal (findProofL (L (n-1)))
+            if List.all (reachable (LOp ll)) goal then
+                let
+                    splitendsSearch =
+                        if n > 1 then
+                            List.map (Tuple.mapFirst SplitEnds) (findProofR False (Rect 1 2) goal)
+                                |> andSearch goal (findProofL (L (n-1)))
 
-                    else
-                        []
+                        else
+                            []
 
-                shape =
-                    if n == 1 then
-                        SOp (Square 1)
-                    else
-                        LOp ll
-            in
-            if List.member shape goal then
-                (L n, [shape])::splitendsSearch
+                    shape =
+                        if n == 1 then
+                            SOp (Square 1)
+                        else
+                            LOp ll
+                in
+                if List.member shape goal then
+                    (L n, [shape])::splitendsSearch
+                else
+                    splitendsSearch
             else
-                splitendsSearch
+                []
 
         _ ->
             []
