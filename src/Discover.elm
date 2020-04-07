@@ -5,6 +5,7 @@ import Generalise exposing (..)
 import Equation exposing (..)
 import Netherite exposing (..)
 import ShowProof exposing (..)
+import Search exposing (..)
 
 
 import Dict
@@ -151,49 +152,41 @@ drawProofStepState { n, current, hovering, max } =
     ++ List.indexedMap (\stepN shape -> Html.map GenM (draw (stepN == nextStepN && hovering) (Tuple.first shape))) current
 
 
-discoverProof : List (Representation, Representation) -> Maybe (Shape, SchematicProof)
+buildGoal : (Representation, Representation) -> Maybe (Shape, (ProofTree, List ProofTree), (ProofTree, List ProofTree))
+buildGoal (start, goal) =
+    case start of
+        [r] ->
+            case ( (repr2Goal (Dict.fromList [ ('n', 50) ]) start, repr2Goal (Dict.fromList [ ('n', 50) ]) goal), (repr2Goal (Dict.fromList [ ('n', 48) ]) start, repr2Goal (Dict.fromList [ ('n', 48) ]) goal)) of
+                ((Just [sb], Just gb), (Just [ss], Just gs)) ->
+                    Just (r, (sb, gb), (ss, gs))
+                _ ->
+                    Nothing
+
+        _ ->
+            Nothing
+
+
+discoverProof : List (Shape, (ProofTree, List ProofTree), (ProofTree, List ProofTree)) -> Maybe (Shape, SchematicProof)
 discoverProof reprs =
     case reprs of
-        (start, goal)::xs ->
+        (r, (sb, gb), (ss, gs))::xs ->
             let
-                startBig =
-                    repr2Goal (Dict.fromList [ ('n', 30) ]) start
-
-                goalBig =
-                    repr2Goal (Dict.fromList [ ('n', 30) ]) goal
-
-                startSmall =
-                    repr2Goal (Dict.fromList [ ('n', 28) ]) start
-
-                goalSmall =
-                    repr2Goal (Dict.fromList [ ('n', 28) ]) goal
-
                 bigProof =
-                    case (startBig, goalBig) of
-                        (Just [ sb ], Just gb) ->
-                            findProof sb gb
-
-                        _ ->
-                            Nothing
+                    Search.findProof sb gb
 
                 smallProof =
-                    case (startSmall, goalSmall) of
-                        (Just [ ss ], Just gs) ->
-                            findProof ss gs
-
-                        _ ->
-                            Nothing
+                    Search.findProof ss gs
 
                 proof =
-                    case (Debug.log "big" bigProof, Debug.log "small" smallProof) of
+                    case (bigProof, smallProof) of
                         (Just bp, Just sp) ->
-                            infer (30, bp) (28, sp)
+                            infer (50, bp) (48, sp)
 
                         _ ->
                             Nothing
             in
-            case (start, proof) of
-                ([r], Just sp) ->
+            case proof of
+                Just sp ->
                     Just (r, sp)
 
                 _ ->
@@ -223,7 +216,7 @@ update msg model =
                             List.concatMap (\a -> List.map (\b -> (a, b)) lRep) (List.filter (List.length >> (==) 1) rRep)
                                 ++ List.concatMap (\a -> List.map (\b -> (a, b)) rRep) (List.filter (List.length >> (==) 1) lRep)
                     in
-                    case discoverProof possible of
+                    case discoverProof (List.sortBy (\(_, (_, a), (_, b)) -> List.length a * List.length b) (List.filterMap buildGoal possible)) of
                         Just sp ->
                             ( ShowProof sp "" Nothing, Cmd.none )
 
@@ -241,10 +234,6 @@ update msg model =
                 Just n ->
                     case repr2Goal (Dict.fromList [ ('n', n) ]) [ (Tuple.first sp) ] of
                         Just [ start ] ->
-                            let
-                                temp =
-                                    { t1 = Debug.log "N: " n, t2 = Debug.log "start: " start, t3 = Debug.log "SP: " (Tuple.second sp) }
-                            in
                             (ShowProof sp s (Maybe.map (\p -> {proof = p, start = start, n = 0, current = [(start,p) ], hovering = False, max = countSteps p}) (evaluateProof n start (Tuple.second sp))), Cmd.none)
 
                         _ ->
