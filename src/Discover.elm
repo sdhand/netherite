@@ -156,7 +156,7 @@ buildGoal : (Representation, Representation) -> Maybe (Shape, (ProofTree, List P
 buildGoal (start, goal) =
     case start of
         [r] ->
-            case ( (repr2Goal (Dict.fromList [ ('n', 50) ]) start, repr2Goal (Dict.fromList [ ('n', 50) ]) goal), (repr2Goal (Dict.fromList [ ('n', 48) ]) start, repr2Goal (Dict.fromList [ ('n', 48) ]) goal)) of
+            case ( (repr2Goal (Dict.fromList [ ('n', 150) ]) start, repr2Goal (Dict.fromList [ ('n', 150) ]) goal), (repr2Goal (Dict.fromList [ ('n', 48) ]) start, repr2Goal (Dict.fromList [ ('n', 48) ]) goal)) of
                 ((Just [sb], Just gb), (Just [ss], Just gs)) ->
                     Just (r, (sb, gb), (ss, gs))
                 _ ->
@@ -180,7 +180,7 @@ discoverProof reprs =
                 proof =
                     case (bigProof, smallProof) of
                         (Just bp, Just sp) ->
-                            infer (50, bp) (48, sp)
+                            infer (150, bp) (48, sp)
 
                         _ ->
                             Nothing

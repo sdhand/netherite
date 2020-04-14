@@ -19,45 +19,45 @@ type AppendableProofTree
     | NextL (Next LOp)
     | Done ProofTree (List ProofTree)
 
-findProofHelper : List ProofTree -> AppendableProofTree -> Maybe ProofTree
-findProofHelper goal points =
+findProofHelper : List ProofTree -> AppendableProofTree -> (() -> Maybe ProofTree) -> Maybe ProofTree
+findProofHelper goal points backtrack =
     case points of
         NextS { shape, found, rGoal, build } ->
             if List.any (reachable (SOp shape) >> not) rGoal then
-                Nothing
+                backtrack ()
             else
-                findProofS shape build found rGoal goal
+                findProofS shape build found rGoal goal backtrack
 
         NextR { shape, found, rGoal, build, rotate } ->
             if List.any (reachable (ROp shape) >> not) rGoal then
-                Nothing
+                backtrack ()
             else
-                findProofR rotate shape build found rGoal goal
+                findProofR rotate shape build found rGoal goal backtrack
 
         NextT { shape, found, rGoal, build } ->
             if List.any (reachable (TOp shape) >> not) rGoal then
-                Nothing
+                backtrack ()
             else
-                findProofT shape build found rGoal goal
+                findProofT shape build found rGoal goal backtrack
 
         NextF { shape, found, rGoal, build } ->
             if List.any (reachable (FOp shape) >> not) rGoal then
-                Nothing
+                backtrack ()
             else
-                findProofF shape build found rGoal goal
+                findProofF shape build found rGoal goal backtrack
 
         NextL { shape, found, rGoal, build } ->
             if List.any (reachable (LOp shape) >> not) rGoal then
-                Nothing
+                backtrack ()
             else
-                findProofL shape build found rGoal goal
+                findProofL shape build found rGoal goal backtrack
 
         Done pt found ->
             if found == goal then
                 Just pt
 
             else
-                Nothing
+                backtrack ()
 
 
 findProof : ProofTree -> List ProofTree -> Maybe ProofTree
@@ -69,28 +69,19 @@ findProof start goal =
     in
     case start of
         SOp s ->
-            findProofHelper sGoal (NextS { shape = s, found = [], rGoal = sGoal, build = SOp >> Done })
+            findProofHelper sGoal (NextS { shape = s, found = [], rGoal = sGoal, build = SOp >> Done }) (always Nothing)
 
         ROp r ->
-            findProofHelper sGoal (NextR { shape = r, found = [], rGoal = sGoal, build = ROp >> Done, rotate = False })
+            findProofHelper sGoal (NextR { shape = r, found = [], rGoal = sGoal, build = ROp >> Done, rotate = False }) (always Nothing)
 
         TOp t ->
-            findProofHelper sGoal (NextT { shape = t, found = [], rGoal = sGoal, build = TOp >> Done })
+            findProofHelper sGoal (NextT { shape = t, found = [], rGoal = sGoal, build = TOp >> Done }) (always Nothing)
 
         FOp f ->
-            findProofHelper sGoal (NextF { shape = f, found = [], rGoal = sGoal, build = FOp >> Done })
+            findProofHelper sGoal (NextF { shape = f, found = [], rGoal = sGoal, build = FOp >> Done }) (always Nothing)
 
         LOp l ->
-            findProofHelper sGoal (NextL { shape = l, found = [], rGoal = sGoal, build = LOp >> Done })
-
-
-ifFailed m1 m2 =
-    case m2 of
-        Just a ->
-            Just a
-
-        Nothing ->
-            m1 ()
+            findProofHelper sGoal (NextL { shape = l, found = [], rGoal = sGoal, build = LOp >> Done }) (always Nothing)
 
 
 insert x l =
@@ -112,12 +103,12 @@ insert x l =
 
 
 
-findProofS : SquareOp -> (SquareOp -> List ProofTree -> AppendableProofTree) -> List ProofTree -> List ProofTree -> List ProofTree -> Maybe ProofTree
-findProofS ss build found rGoal goal =
+findProofS : SquareOp -> (SquareOp -> List ProofTree -> AppendableProofTree) -> List ProofTree -> List ProofTree -> List ProofTree -> (() -> Maybe ProofTree) -> Maybe ProofTree
+findProofS ss build found rGoal goal backtrack =
     case ss of
         Square n ->
             let
-                lcutSearch () =
+                lcutSearch bt () =
                     if n > 1 then
                         findProofHelper
                             goal
@@ -135,11 +126,12 @@ findProofS ss build found rGoal goal =
                                             }
                                 }
                             )
+                            bt
 
                     else
-                        Nothing
+                        bt ()
 
-                splitdiaSearch () =
+                splitdiaSearch bt () =
                     if n > 1 then
                         findProofHelper
                             goal
@@ -157,11 +149,12 @@ findProofS ss build found rGoal goal =
                                             }
                                 }
                             )
+                            bt
 
                     else
-                        Nothing
+                        bt ()
 
-                splitouterSearch () =
+                splitouterSearch bt () =
                     if n >= 3 then
                         findProofHelper
                             goal
@@ -179,11 +172,12 @@ findProofS ss build found rGoal goal =
                                             }
                                 }
                             )
+                            bt
 
                     else
-                        Nothing
+                        bt ()
 
-                splitinnerSearch () =
+                splitinnerSearch bt () =
                     if n >= 3 then
                         findProofHelper
                             goal
@@ -201,10 +195,11 @@ findProofS ss build found rGoal goal =
                                             }
                                 }
                             )
+                            bt
                     else
-                        Nothing
+                        bt ()
 
-                split4Search () =
+                split4Search bt () =
                     if n >= 2 && modBy 2 n == 0 then
                         findProofHelper
                             goal
@@ -236,33 +231,33 @@ findProofS ss build found rGoal goal =
                                             }
                                 }
                             )
+                            bt
                     else
-                        Nothing
+                        bt ()
+
+                noopSearch bt =
+                    if List.member (SOp ss) rGoal then
+                        findProofHelper goal (build ss (insert (SOp ss) found)) bt
+
+                    else
+                        bt ()
             in
-            if List.member (SOp ss) rGoal then
-                findProofHelper goal (build ss (insert (SOp ss) found))
-                    |> ifFailed lcutSearch
-                    |> ifFailed splitdiaSearch
-                    |> ifFailed splitouterSearch
-                    |> ifFailed splitinnerSearch
-                    |> ifFailed split4Search
-            else
-                lcutSearch ()
-                    |> ifFailed splitdiaSearch
-                    |> ifFailed splitouterSearch
-                    |> ifFailed splitinnerSearch
-                    |> ifFailed split4Search
+            split4Search backtrack
+                |> splitinnerSearch
+                |> splitdiaSearch
+                |> lcutSearch
+                |> noopSearch
 
         _ ->
             Nothing
 
 
-findProofR : Bool -> RectOp -> (RectOp -> List ProofTree -> AppendableProofTree) -> List ProofTree -> List ProofTree -> List ProofTree -> Maybe ProofTree
-findProofR rotate rr build found rGoal goal =
+findProofR : Bool -> RectOp -> (RectOp -> List ProofTree -> AppendableProofTree) -> List ProofTree -> List ProofTree -> List ProofTree -> (() -> Maybe ProofTree) -> Maybe ProofTree
+findProofR rotate rr build found rGoal goal backtrack =
     case rr of
         Rect n1 n2 ->
             let
-                splitdiaSearch () =
+                splitdiaSearch bt () =
                     if n1-n2 == 1 then
                         findProofHelper
                             goal
@@ -281,6 +276,7 @@ findProofR rotate rr build found rGoal goal =
                                             }
                                 }
                             )
+                            bt
 
                     else if n2-n1 == 1 then
                         findProofHelper
@@ -300,10 +296,11 @@ findProofR rotate rr build found rGoal goal =
                                             }
                                 }
                             )
+                            bt
                     else
-                        Nothing
+                        bt ()
 
-                splitsquareSearch () =
+                splitsquareSearch bt () =
                     if n1 > n2 then
                         findProofHelper
                             goal
@@ -323,6 +320,7 @@ findProofR rotate rr build found rGoal goal =
                                             }
                                 }
                             )
+                            bt
 
                     else if n2 > n1 then
                         findProofHelper
@@ -343,10 +341,11 @@ findProofR rotate rr build found rGoal goal =
                                             }
                                 }
                             )
+                            bt
                     else
-                        Nothing
+                        bt ()
 
-                tosquareSearch () =
+                tosquareSearch bt () =
                     if n1 == n2 then
                         findProofHelper
                             goal
@@ -358,10 +357,11 @@ findProofR rotate rr build found rGoal goal =
                                     \s fo1 -> build (ToSquare s) fo1
                                 }
                             )
+                            bt
                     else
-                        Nothing
+                        bt ()
 
-                rotateSearch () =
+                rotateSearch bt () =
                     if not rotate then
                         findProofHelper
                             goal
@@ -374,8 +374,9 @@ findProofR rotate rr build found rGoal goal =
                                 , rotate = True
                                 }
                             )
+                            bt
                     else
-                        Nothing
+                        bt ()
 
                 shape =
                     case (n1, n2) of
@@ -384,30 +385,30 @@ findProofR rotate rr build found rGoal goal =
 
                         _ ->
                             ROp rr
-            in
-            if List.member shape rGoal then
-                findProofHelper goal (build rr (insert shape found))
-                    |> ifFailed splitdiaSearch
-                    |> ifFailed splitsquareSearch
-                    |> ifFailed tosquareSearch
-                    |> ifFailed rotateSearch
-            else
-                splitdiaSearch ()
-                    |> ifFailed splitsquareSearch
-                    |> ifFailed tosquareSearch
-                    |> ifFailed rotateSearch
 
+                noopSearch bt =
+                    if List.member shape rGoal then
+                        findProofHelper goal (build rr (insert shape found)) bt
+
+                    else
+                        bt ()
+            in
+            rotateSearch backtrack
+                |> tosquareSearch
+                |> splitsquareSearch
+                |> splitdiaSearch
+                |> noopSearch
 
         _ ->
             Nothing
 
 
-findProofT : TriOp -> (TriOp -> List ProofTree -> AppendableProofTree) -> List ProofTree -> List ProofTree -> List ProofTree -> Maybe ProofTree
-findProofT tt build found rGoal goal =
+findProofT : TriOp -> (TriOp -> List ProofTree -> AppendableProofTree) -> List ProofTree -> List ProofTree -> List ProofTree -> (() -> Maybe ProofTree) -> Maybe ProofTree
+findProofT tt build found rGoal goal backtrack =
     case tt of
         Tri n ->
             let
-                splittstSearch () =
+                splittstSearch bt () =
                     if n > 1 then
                         findProofHelper
                             goal
@@ -433,10 +434,11 @@ findProofT tt build found rGoal goal =
                                             }
                                 }
                             )
+                            bt
                     else
-                        Nothing
+                        bt ()
 
-                lcutSearch () =
+                lcutSearch bt () =
                     if n > 2 then
                         findProofHelper
                             goal
@@ -456,10 +458,11 @@ findProofT tt build found rGoal goal =
                                             }
                                 }
                             )
+                            bt
                     else
-                        Nothing
+                        bt ()
 
-                splitsideSearch () =
+                splitsideSearch bt () =
                     if n > 1 then
                         findProofHelper
                             goal
@@ -480,8 +483,9 @@ findProofT tt build found rGoal goal =
                                             }
                                 }
                             )
+                            bt
                     else
-                        Nothing
+                        bt ()
 
                 shape =
                     case n of
@@ -489,26 +493,28 @@ findProofT tt build found rGoal goal =
                             SOp (Square 1)
                         _ ->
                             TOp tt
+
+                noopSearch bt =
+                    if List.member shape rGoal then
+                        findProofHelper goal (build tt (insert shape found)) bt
+
+                    else
+                        bt ()
             in
-            if List.member shape rGoal then
-                findProofHelper goal (build tt (insert shape found))
-                    |> ifFailed splittstSearch
-                    |> ifFailed lcutSearch
-                    |> ifFailed splitsideSearch
-            else
-                splittstSearch ()
-                    |> ifFailed lcutSearch
-                    |> ifFailed splitsideSearch
+            splitsideSearch backtrack
+                |> lcutSearch
+                |> splittstSearch
+                |> noopSearch
 
         _ ->
             Nothing
 
-findProofF : FrameOp -> (FrameOp -> List ProofTree -> AppendableProofTree) -> List ProofTree -> List ProofTree -> List ProofTree -> Maybe ProofTree
-findProofF ff build found rGoal goal =
+findProofF : FrameOp -> (FrameOp -> List ProofTree -> AppendableProofTree) -> List ProofTree -> List ProofTree -> List ProofTree -> (() -> Maybe ProofTree) -> Maybe ProofTree
+findProofF ff build found rGoal goal backtrack =
     case ff of
         Frame n1 n2 ->
             let
-                splitframeSearch () =
+                splitframeSearch bt () =
                     if n1 > n2 then
                         findProofHelper
                             goal
@@ -546,9 +552,10 @@ findProofF ff build found rGoal goal =
                                             }
                                 }
                             )
+                            bt
 
                     else
-                        Nothing
+                        bt ()
 
                 shape =
                     case (n1, n2) of
@@ -557,53 +564,66 @@ findProofF ff build found rGoal goal =
 
                         _ ->
                             FOp ff
+
+                noopSearch bt =
+                    if List.member shape rGoal then
+                        findProofHelper goal (build ff (insert shape found)) bt
+
+                    else
+                        bt()
             in
-            if List.member shape rGoal then
-                findProofHelper goal (build ff (insert shape found))
-                    |> ifFailed splitframeSearch
-            else
-                splitframeSearch ()
+            splitframeSearch backtrack
+                |> noopSearch
 
         _ ->
             Nothing
 
 
-findProofL : LOp -> (LOp -> List ProofTree -> AppendableProofTree) -> List ProofTree -> List ProofTree -> List ProofTree -> Maybe ProofTree
-findProofL ll build found rGoal goal =
+findProofL : LOp -> (LOp -> List ProofTree -> AppendableProofTree) -> List ProofTree -> List ProofTree -> List ProofTree -> (() -> Maybe ProofTree) -> Maybe ProofTree
+findProofL ll build found rGoal goal backtrack =
     case ll of
         L n ->
             let
-                splitendsSearch () =
-                    findProofHelper
-                        goal
-                        (NextR
-                            { shape = Rect 1 2
-                            , found = found
-                            , rGoal = diffPt goal found
-                            , rotate = False
-                            , build =
-                                \r fo1 ->
-                                    NextL
-                                        { shape = L (n-1)
-                                        , found = fo1
-                                        , rGoal = diffPt goal fo1
-                                        , build =
-                                            \l fo2 -> build (SplitEnds r l) fo2
-                                        }
-                            }
-                        )
+                splitendsSearch bt () =
+                    if n > 1 then
+                        findProofHelper
+                            goal
+                            (NextR
+                                { shape = Rect 1 2
+                                , found = found
+                                , rGoal = diffPt goal found
+                                , rotate = False
+                                , build =
+                                    \r fo1 ->
+                                        NextL
+                                            { shape = L (n-1)
+                                            , found = fo1
+                                            , rGoal = diffPt goal fo1
+                                            , build =
+                                                \l fo2 -> build (SplitEnds r l) fo2
+                                            }
+                                }
+                            )
+                            bt
+                    else
+                        bt ()
+
                 shape =
                     case n of
                         1 ->
                             SOp (Square 1)
                         _ ->
                             LOp ll
+
+                noopSearch bt =
+                    if List.member shape rGoal then
+                        findProofHelper goal (build ll (insert shape found)) bt
+
+                    else
+                        bt ()
             in
-            if List.member shape rGoal then
-                findProofHelper goal (build ll (insert shape found))
-                    |> ifFailed splitendsSearch
-            else
-                splitendsSearch ()
+            splitendsSearch backtrack
+                |> noopSearch
 
         _ ->
             Nothing
