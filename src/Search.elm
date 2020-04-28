@@ -23,33 +23,33 @@ findProofHelper : List ProofTree -> AppendableProofTree -> (() -> Maybe ProofTre
 findProofHelper goal points backtrack =
     case points of
         NextS { shape, found, rGoal, build } ->
-            if List.any (reachable (SOp shape) >> not) rGoal then
-                backtrack ()
-            else
+            --if List.any (reachable (SOp shape) >> not) rGoal then
+                --backtrack ()
+            --else
                 findProofS shape build found rGoal goal backtrack
 
         NextR { shape, found, rGoal, build, rotate } ->
-            if List.any (reachable (ROp shape) >> not) rGoal then
-                backtrack ()
-            else
+            --if List.any (reachable (ROp shape) >> not) rGoal then
+                --backtrack ()
+            --else
                 findProofR rotate shape build found rGoal goal backtrack
 
         NextT { shape, found, rGoal, build } ->
-            if List.any (reachable (TOp shape) >> not) rGoal then
-                backtrack ()
-            else
+            --if List.any (reachable (TOp shape) >> not) rGoal then
+                --backtrack ()
+            --else
                 findProofT shape build found rGoal goal backtrack
 
         NextF { shape, found, rGoal, build } ->
-            if List.any (reachable (FOp shape) >> not) rGoal then
-                backtrack ()
-            else
+            --if List.any (reachable (FOp shape) >> not) rGoal then
+                --backtrack ()
+            --else
                 findProofF shape build found rGoal goal backtrack
 
         NextL { shape, found, rGoal, build } ->
-            if List.any (reachable (LOp shape) >> not) rGoal then
-                backtrack ()
-            else
+            --if List.any (reachable (LOp shape) >> not) rGoal then
+                --backtrack ()
+            --else
                 findProofL shape build found rGoal goal backtrack
 
         Done pt found ->

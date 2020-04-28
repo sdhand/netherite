@@ -56,6 +56,29 @@ init _ =
     ( Input "", Cmd.none )
 
 
+discover : (IExpr, IExpr) -> Int -> Int -> Maybe (Shape, SchematicProof)
+discover (e1, e2) n1 n2 =
+    let
+        bigN =
+            Basics.max n1 n2
+
+        smallN =
+            Basics.min n1 n2
+
+        rRep =
+            representations e1
+
+        lRep =
+            representations e2
+
+        possible =
+            List.concatMap (\a -> List.map (\b -> (a, b)) lRep) (List.filter (List.length >> (==) 1) rRep)
+                ++ List.concatMap (\a -> List.map (\b -> (a, b)) rRep) (List.filter (List.length >> (==) 1) lRep)
+    in
+    discoverProof (List.sortBy (\(_, (_, a), (_, b)) -> List.length a * List.length b) (List.filterMap (buildGoal bigN smallN) possible)) bigN smallN
+
+
+
 draw drawBorder pt =
     div
         (if drawBorder then [ style "border" "2px solid blue", style "display" "inline-block" ] else [style "display" "inline-block"])
@@ -152,11 +175,11 @@ drawProofStepState { n, current, hovering, max } =
     ++ List.indexedMap (\stepN shape -> Html.map GenM (draw (stepN == nextStepN && hovering) (Tuple.first shape))) current
 
 
-buildGoal : (Representation, Representation) -> Maybe (Shape, (ProofTree, List ProofTree), (ProofTree, List ProofTree))
-buildGoal (start, goal) =
+buildGoal : Int -> Int -> (Representation, Representation) -> Maybe (Shape, (ProofTree, List ProofTree), (ProofTree, List ProofTree))
+buildGoal n1 n2 (start, goal)=
     case start of
         [r] ->
-            case ( (repr2Goal (Dict.fromList [ ('n', 150) ]) start, repr2Goal (Dict.fromList [ ('n', 150) ]) goal), (repr2Goal (Dict.fromList [ ('n', 48) ]) start, repr2Goal (Dict.fromList [ ('n', 48) ]) goal)) of
+            case ( (repr2Goal (Dict.fromList [ ('n', n1) ]) start, repr2Goal (Dict.fromList [ ('n', n1) ]) goal), (repr2Goal (Dict.fromList [ ('n', n2) ]) start, repr2Goal (Dict.fromList [ ('n', n2) ]) goal)) of
                 ((Just [sb], Just gb), (Just [ss], Just gs)) ->
                     Just (r, (sb, gb), (ss, gs))
                 _ ->
@@ -166,8 +189,8 @@ buildGoal (start, goal) =
             Nothing
 
 
-discoverProof : List (Shape, (ProofTree, List ProofTree), (ProofTree, List ProofTree)) -> Maybe (Shape, SchematicProof)
-discoverProof reprs =
+discoverProof : List (Shape, (ProofTree, List ProofTree), (ProofTree, List ProofTree)) -> Int -> Int -> Maybe (Shape, SchematicProof)
+discoverProof reprs n1 n2 =
     case reprs of
         (r, (sb, gb), (ss, gs))::xs ->
             let
@@ -180,7 +203,7 @@ discoverProof reprs =
                 proof =
                     case (bigProof, smallProof) of
                         (Just bp, Just sp) ->
-                            infer (150, bp) (48, sp)
+                            infer (n1, bp) (n2, sp)
 
                         _ ->
                             Nothing
@@ -190,9 +213,17 @@ discoverProof reprs =
                     Just (r, sp)
 
                 _ ->
-                    discoverProof xs
+                    discoverProof xs n1 n2
 
         [] ->
+            Nothing
+
+eval sp n =
+    case repr2Goal (Dict.fromList [ ('n', n) ]) [ Tuple.first sp ] of
+        Just [ start ] ->
+            Maybe.map (Tuple.pair start) (evaluateProof n start (Tuple.second sp))
+
+        _ ->
             Nothing
 
 
@@ -216,7 +247,7 @@ update msg model =
                             List.concatMap (\a -> List.map (\b -> (a, b)) lRep) (List.filter (List.length >> (==) 1) rRep)
                                 ++ List.concatMap (\a -> List.map (\b -> (a, b)) rRep) (List.filter (List.length >> (==) 1) lRep)
                     in
-                    case discoverProof (List.sortBy (\(_, (_, a), (_, b)) -> List.length a * List.length b) (List.filterMap buildGoal possible)) of
+                    case discoverProof (List.sortBy (\(_, (_, a), (_, b)) -> List.length a * List.length b) (List.filterMap (buildGoal 50 48) possible)) 50 48 of
                         Just sp ->
                             ( ShowProof sp "" Nothing, Cmd.none )
 

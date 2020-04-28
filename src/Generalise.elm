@@ -2768,7 +2768,9 @@ infer (n1, p1) (n2, p2) =
                     if List.all (\x -> x) (List.indexedMap (\i p -> if divides ((List.length ps - 1)//r) i then Maybe.Extra.isJust p else True) ps) then
                         List.Extra.getAt ((List.length ps - 1)//r) ps
                             |> Maybe.withDefault Nothing
+                            |> Debug.log ""
                             |> Maybe.andThen (tryStepCase (largeN, largeN - (largeN-smallN)//r))
+                            --|> Debug.log ""
                             |> ifFailed (testPossibleRepeats ps rs)
                     else
                         testPossibleRepeats ps rs
